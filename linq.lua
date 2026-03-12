@@ -4,22 +4,18 @@ local map = require("map")
 local linq = {}
 
 ---@alias option<T> T | nil
----@alias iter<T> fun(table: T[], i?: integer):integer, T
 
 ---@class enumerable<T>
----@field distinct fun(self: enumerable<T>): enumerable<T>
----@field distinct fun(self: enumerable<T>, keySelector: fun(item: T): any): enumerable<T>
----@field tolist fun(self: enumerable<T>): list<T>
+local enumerable_impl = {}
 
 ---@class list<T>
----@field distinct fun(self: list<T>): enumerable<T>
----@field distinct fun(self: list<T>, keySelector: fun(item: T): any): list<T>
----@field enumerate fun(self: list<T>): enumerable<T>
----@field copy fun(self: list<T>): list<T>
----@field iter fun(self: list<T>): iter<T>
-
-local enumerable_impl = {}
 local list_impl = {}
+
+---@class itermeta<T>
+---@operator call:(iter<T>): T
+
+---@class iter<T> : itermeta<T>
+local iter_impl = {}
 
 ---@generic T
 ---@param list T[]
@@ -51,35 +47,29 @@ local function validateEnumerable(enumerable)
         error("Expected enumerable, got " .. type(enumerable))
     end
 
-    if enumerable.next == nil or type(enumerable.next) ~= "function" then
+    if enumerable.__next == nil or type(enumerable.__next) ~= "function" then
         error("Enumerable: Invalid state, missing next() function")
     end
 
-    if enumerable.src == nil then
+    if enumerable.__src == nil then
         error("Enumerable: Invalid state, missing src")
+    end
+end
+
+local function validateIter(iter)
+    if getmetatable(iter) == nil or getmetatable(iter).__type ~= "iter" then
+        error("Expected iter, got " .. type(iter) .. "; did you call __next on an enumerable?")
+    end
+
+    if iter.__itersrc == nil then
+        error("Iter: Invalid state, missing source")
     end
 end
 
 local function makeListMeta()
     return {
         __index = list_impl,
-        __type = "list",
-        __iter_idx = nil,
-        __call = function(self, ...)
-            local mt = getmetatable(self)
-            if mt.__iter_idx == nil then
-                mt.__iter_idx = 1
-            else
-                mt.__iter_idx = mt.__iter_idx + 1
-            end
-            local item = self[mt.__iter_idx]
-            if item == nil then
-                mt.__iter_idx = nil
-                return nil
-            end
-
-            return item
-        end
+        __type = "list"
     }
 end
 
@@ -87,30 +77,37 @@ local function makeEnumerableMeta()
     return {
         __index = enumerable_impl,
         __type = "enumerable",
-        __call = function(self, ...)
-            return self:next()
+    }
+end
+
+local function makeIterMeta(src_view)
+    return {
+        __index = iter_impl,
+        __type = "iter",
+        __call = function (self)
+            return self.__itersrc.__next(self, self.__itersrc)
         end
     }
 end
 
-local function enumerable_impl_distinct_next_self(self)
-    validateEnumerable(self)
+local function enumerable_impl_distinct_next_self(iter, enumerable)
+    validateIter(iter)
 
-    local value = self.src:next()
+    local value = enumerable.__src.__next(iter, enumerable.__src)
     if value == nil then
         return nil
     end
 
-    local seen = (self.data or {}).seen
+    local seen = (iter.__data or {}).seen
     if seen == nil then
-        self.data = { seen = {} }
+        iter.__data = { seen = {} }
     end
 
-    while value ~= nil and self.data.seen[value] do
-        value = self.src:next()
+    while value ~= nil and iter.__data.seen[value] do
+        value = enumerable.__src.__next(iter, enumerable.__src)
     end
     if value ~= nil then
-        self.data.seen[value] = true
+        iter.__data.seen[value] = true
     end
     return value
 end
@@ -122,8 +119,8 @@ function enumerable_impl:distinct(...)
     return map({ count = select("#", ...), type = types(...)})
         :Case({ count = 0 }, function(x)
             return setmetatable({
-                src = self,
-                next = enumerable_impl_distinct_next_self
+                __src = self,
+                __next = enumerable_impl_distinct_next_self
             }, makeEnumerableMeta())
         end)
         :Case({ count = 1 }, function(x)
@@ -137,21 +134,31 @@ end
 
 ---@generic T
 ---@param self enumerable<T>
+---@return iter<T>
+function enumerable_impl:iter()
+    validateEnumerable(self)
+
+    return setmetatable({
+        __itersrc = self,
+    }, makeIterMeta(self))
+end
+
+---@generic T
+---@param self enumerable<T>
 ---@return list<T>
 function enumerable_impl:tolist()
     return linq.list(self)
 end
 
-local function list_impl_enumerable_next(self)
-    validateEnumerable(self)
+local function list_impl_enumerable_next(iter, enumerator)
+    validateIter(iter)
 
-    local idx = (self.data or {}).idx
-    if idx == nil then
-        self.data = { idx = 1 }
-        idx = 1
+    iter.__data = iter.__data or {}
+    if iter.__data.idx == nil then
+        iter.__data.idx = 1
     end
-    local value = self.src[idx]
-    self.data.idx = idx + 1
+    local value = enumerator.__src[iter.__data.idx]
+    iter.__data.idx = iter.__data.idx + 1
     return value
 end
 
@@ -162,8 +169,8 @@ function list_impl:enumerate()
     validateList(self)
 
     return setmetatable({
-        src = self,
-        next = list_impl_enumerable_next
+        __src = self,
+        __next = list_impl_enumerable_next
     }, makeEnumerableMeta())
 end
 
@@ -212,9 +219,8 @@ end
 
 ---@generic T
 ---@overload fun(...: T): list<T>
----@overload fun(table: table): list<any>
----@overload fun(enumerable: enumerable<T>): list<T>
 ---@overload fun(list: list<T>): list<T>
+---@overload fun(enumerable: enumerable<T>): list<T>
 function linq.list(...)
     if select("#", ...) == 1 and type(select(1, ...)) == "table" then
         if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "list" then

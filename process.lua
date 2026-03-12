@@ -1,14 +1,28 @@
 local linq = require("linq")
 local data = require("raw")
 
-local list = linq.list{1, 2, 2, 3, 4, 4, 5}
+---@type list<integer|string>
+local union_test = linq.list(1, "")
 
-for value in list do
+---@type number
+local test = 1
+
+local list = linq.list(1, 2, 2, 3, 4, test, 5.1, "")
+
+local list2 = linq.list(list)
+
+local list3 = list:copy()
+
+for value in list:iter() do
     print(value)
 end
 
 print("----")
 
-for value in list:distinct() do
+local distinct = list:distinct()
+
+local iter = distinct:iter()
+
+for value in iter do
     print(value)
 end
