@@ -129,14 +129,14 @@ local function md5(value)
     return to_hex_le(a0) .. to_hex_le(b0) .. to_hex_le(c0) .. to_hex_le(d0)
 end
 
-function predicates:Get()
+function predicates:get()
     if not self.instance then
-        self.instance = self:New()
+        self.instance = self:new()
     end
     return self.instance
 end
 
-function predicates:New()
+function predicates:new()
     local instance = setmetatable({}, predicates.metatable)
 
     instance.compiledFunctions = {

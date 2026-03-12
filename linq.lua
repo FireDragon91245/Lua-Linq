@@ -1,4 +1,5 @@
 local map = require("map")
+local predicate_parser = require("predicates"):get()
 
 ---@class linq
 local linq = {}
@@ -11,11 +12,127 @@ local enumerable_impl = {}
 ---@class list<T>
 local list_impl = {}
 
----@class itermeta<T>
+---@class iter<T>
 ---@operator call:(iter<T>): T
-
----@class iter<T> : itermeta<T>
 local iter_impl = {}
+
+---@class equality_comparer
+---@operator band(equality_comparer): equality_comparer
+---@field compare fun(comparer: equality_comparer, a: any, b: any): any, any, boolean|nil
+---@field compareable_types type[]
+---@field priority number
+---@field group number
+
+local function makeEqualityComparerMeta()
+    return {}
+end
+
+local function deepCopyTable(tbl)
+    if type(tbl) ~= "table" then
+        return tbl
+    end
+
+    local copy = {}
+    for k, v in pairs(tbl) do
+        copy[deepCopyTable(k)] = deepCopyTable(v)
+    end
+    return copy
+end
+
+---@type equality_comparer
+linq.IGNORE_CASE = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "string" and type(b) == "string" then
+            local lowera = a:lower()
+            local lowerb = b:lower()
+            return lowera, lowerb, lowera == lowerb
+        end
+        return nil, nil, nil
+    end,
+    compareable_types = { "string" },
+    priority = 1,
+    group = 1
+}, makeEqualityComparerMeta())
+linq.IGNORE_WHITESPACE = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "string" and type(b) == "string" then
+            local cleanA = a:gsub("%s+", "")
+            local cleanB = b:gsub("%s+", "")
+            return cleanA, cleanB, cleanA == cleanB
+        end
+        return nil, nil, nil
+    end,
+    compareable_types = { "string" },
+    priority = 2,
+    group = 1
+}, makeEqualityComparerMeta())
+linq.TABLE_EQUAL = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "table" and type(b) == "table" then
+            for k, v in pairs(a) do
+                if not comparer:compare(v, b[k]) then
+                    return nil, nil, false
+                end
+            end
+            for k, v in pairs(b) do
+                if not comparer:compare(v, a[k]) then
+                    return nil, nil, false
+                end
+            end
+            return nil, nil, true
+        end
+        return nil, nil, nil
+    end,
+    compareable_types = { "table" },
+    priority = 1,
+    group = 2
+}, makeEqualityComparerMeta())
+linq.TABLE_SUBSET = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "table" and type(b) == "table" then
+            for k, v in pairs(a) do
+                if not comparer:compare(v, b[k]) then
+                    return nil, nil, false
+                end
+            end
+            return nil, nil, true
+        end
+        return nil, nil, nil
+    end,
+    compareable_types = { "table" },
+    priority = 1,
+    group = 2
+}, makeEqualityComparerMeta())
+linq.TABLE_SUPERSET = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "table" and type(b) == "table" then
+            for k, v in pairs(b) do
+                if not comparer:compare(v, a[k]) then
+                    return nil, nil, false
+                end
+            end
+            return nil, nil, true
+        end
+        return nil, nil, nil
+    end,
+    compareable_types = { "table" },
+    priority = 1,
+    group = 2
+}, makeEqualityComparerMeta())
+linq.TABLE_KEY_ONLY = setmetatable({
+    compare = function(comparer, a, b)
+        if type(a) == "table" and type(b) == "table" then
+            
+            for k, _ in pairs(a) do
+                
+            end
+        end
+        return nil, nil, true
+    end,
+    compareable_types = { "table" },
+    priority = 1,
+    group = 2
+}, makeEqualityComparerMeta())
 
 ---@generic T
 ---@param list T[]
@@ -84,7 +201,7 @@ local function makeIterMeta(src_view)
     return {
         __index = iter_impl,
         __type = "iter",
-        __call = function (self)
+        __call = function(self)
             return self.__itersrc.__next(self, self.__itersrc)
         end
     }
@@ -116,7 +233,7 @@ end
 ---@param self enumerable<T>
 ---@return enumerable<T>
 function enumerable_impl:distinct(...)
-    return map({ count = select("#", ...), type = types(...)})
+    return map({ count = select("#", ...), type = types(...) })
         :Case({ count = 0 }, function(x)
             return setmetatable({
                 __src = self,
@@ -128,6 +245,176 @@ function enumerable_impl:distinct(...)
         end)
         :Case("x => x.count > 1", function(x)
 
+        end)
+        :Result()
+end
+
+---@param tab table
+---@param compere table
+---@param mode 'subset'|'equal'|'superset'
+local function match_table(tab, compere, mode)
+    return map(mode)
+        :Case('subset', function(_)
+            for k, v in pairs(tab) do
+                local res = map(type(v))
+                    :Case('number', function(_)
+                        if compere[k] == nil or compere[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('string', function(_)
+                        if compere[k] == nil or compere[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('function', function(_)
+                        if compere[k] == nil or compere[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('boolean', function(_)
+                        if compere[k] == nil or compere[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('table', function(_)
+                        if compere[k] == nil or not match_table(v, compere[k], mode) then
+                            return false
+                        end
+                    end)
+                    :Default(function(x)
+                        error("Unsupported type in pattern: " .. x)
+                    end)
+                    :Result()
+                if res == false then
+                    return false
+                end
+            end
+        end)
+        :Case('equal', function(_)
+            for k, v in pairs(compere) do
+                local res = map(type(v))
+                    :Case('number', function(_)
+                        if tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('string', function(_)
+                        if tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('function', function(_)
+                        if tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('boolean', function(_)
+                        if tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('table', function(_)
+                        if not match_table(tab[k], v, mode) then
+                            return false
+                        end
+                    end)
+                    :Default(function(x)
+                        error("Unsupported type in pattern: " .. x)
+                    end)
+                    :Result()
+                if res == false then
+                    return false
+                end
+            end
+        end)
+        :Case('superset', function(_)
+            for k, v in pairs(compere) do
+                local res = map(type(v))
+                    :Case('number', function(_)
+                        if tab[k] == nil or tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('string', function(_)
+                        if tab[k] == nil or tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('function', function(_)
+                        if tab[k] == nil or tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('boolean', function(_)
+                        if tab[k] == nil or tab[k] ~= v then
+                            return false
+                        end
+                    end)
+                    :Case('table', function(_)
+                        if tab[k] == nil or not match_table(tab[k], v, mode) then
+                            return false
+                        end
+                    end)
+                    :Default(function(x)
+                        error("Unsupported type in pattern: " .. x)
+                    end)
+                    :Result()
+                if res == false then
+                    return false
+                end
+            end
+        end)
+        :Default(function(x)
+            error("Unsupported match mode: " .. x)
+        end)
+        :Result()
+end
+
+---@generic T
+---@overload fun(self: enumerable<T>, predicate: fun(item: T): boolean): enumerable<T>
+---@overload fun(self: enumerable<T>, predicate: string): enumerable<T>
+---@overload fun(self: enumerable<T>, predicate: table): enumerable<T>
+---@overload fun(self: enumerable<T>, predicate: table, equality_comparer: equality_comparer): enumerable<T>
+function enumerable_impl:where(predicate, comparer)
+    return map(type(predicate))
+        :Case("function", function(_)
+            return setmetatable({
+                __src = self,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    local value = enumerable.__src.__next(iter, enumerable.__src)
+                    while value ~= nil and not predicate(value) do
+                        value = enumerable.__src.__next(iter, enumerable.__src)
+                    end
+                    return value
+                end
+            }, makeEnumerableMeta())
+        end)
+        :Case("string", function(_)
+            local func = predicate_parser:GetPredicateFunction(predicate)
+            if func == nil then
+                error("Invalid predicate string: " .. predicate)
+            end
+
+            return setmetatable({
+                __src = self,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    local value = enumerable.__src.__next(iter, enumerable.__src)
+                    while value ~= nil and not func(value) do
+                        value = enumerable.__src.__next(iter, enumerable.__src)
+                    end
+                    return value
+                end
+            }, makeEnumerableMeta())
+        end)
+        :Case("table", function(_)
+        end)
+        :Default(function(x)
+            error("Unsupported predicate type: " .. x)
         end)
         :Result()
 end
@@ -221,6 +508,7 @@ end
 ---@overload fun(...: T): list<T>
 ---@overload fun(list: list<T>): list<T>
 ---@overload fun(enumerable: enumerable<T>): list<T>
+---@overload fun(table: table): list<any>
 function linq.list(...)
     if select("#", ...) == 1 and type(select(1, ...)) == "table" then
         if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "list" then
