@@ -18,121 +18,12 @@ local iter_impl = {}
 
 ---@class equality_comparer
 ---@operator band(equality_comparer): equality_comparer
----@field compare fun(comparer: equality_comparer, a: any, b: any): any, any, boolean|nil
----@field compareable_types type[]
+---@field compare fun(self: equality_comparer, a: any, b: any, prep_for_next: boolean|nil): any|boolean, any
+---@field is_combined fun(self: equality_comparer): boolean
+---@field key fun(self: equality_comparer): string
+---@field types fun(self: equality_comparer): type[]
 ---@field priority number
----@field group number
-
-local function makeEqualityComparerMeta()
-    return {}
-end
-
-local function deepCopyTable(tbl)
-    if type(tbl) ~= "table" then
-        return tbl
-    end
-
-    local copy = {}
-    for k, v in pairs(tbl) do
-        copy[deepCopyTable(k)] = deepCopyTable(v)
-    end
-    return copy
-end
-
----@type equality_comparer
-linq.IGNORE_CASE = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "string" and type(b) == "string" then
-            local lowera = a:lower()
-            local lowerb = b:lower()
-            return lowera, lowerb, lowera == lowerb
-        end
-        return nil, nil, nil
-    end,
-    compareable_types = { "string" },
-    priority = 1,
-    group = 1
-}, makeEqualityComparerMeta())
-linq.IGNORE_WHITESPACE = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "string" and type(b) == "string" then
-            local cleanA = a:gsub("%s+", "")
-            local cleanB = b:gsub("%s+", "")
-            return cleanA, cleanB, cleanA == cleanB
-        end
-        return nil, nil, nil
-    end,
-    compareable_types = { "string" },
-    priority = 2,
-    group = 1
-}, makeEqualityComparerMeta())
-linq.TABLE_EQUAL = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "table" and type(b) == "table" then
-            for k, v in pairs(a) do
-                if not comparer:compare(v, b[k]) then
-                    return nil, nil, false
-                end
-            end
-            for k, v in pairs(b) do
-                if not comparer:compare(v, a[k]) then
-                    return nil, nil, false
-                end
-            end
-            return nil, nil, true
-        end
-        return nil, nil, nil
-    end,
-    compareable_types = { "table" },
-    priority = 1,
-    group = 2
-}, makeEqualityComparerMeta())
-linq.TABLE_SUBSET = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "table" and type(b) == "table" then
-            for k, v in pairs(a) do
-                if not comparer:compare(v, b[k]) then
-                    return nil, nil, false
-                end
-            end
-            return nil, nil, true
-        end
-        return nil, nil, nil
-    end,
-    compareable_types = { "table" },
-    priority = 1,
-    group = 2
-}, makeEqualityComparerMeta())
-linq.TABLE_SUPERSET = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "table" and type(b) == "table" then
-            for k, v in pairs(b) do
-                if not comparer:compare(v, a[k]) then
-                    return nil, nil, false
-                end
-            end
-            return nil, nil, true
-        end
-        return nil, nil, nil
-    end,
-    compareable_types = { "table" },
-    priority = 1,
-    group = 2
-}, makeEqualityComparerMeta())
-linq.TABLE_KEY_ONLY = setmetatable({
-    compare = function(comparer, a, b)
-        if type(a) == "table" and type(b) == "table" then
-            
-            for k, _ in pairs(a) do
-                
-            end
-        end
-        return nil, nil, true
-    end,
-    compareable_types = { "table" },
-    priority = 1,
-    group = 2
-}, makeEqualityComparerMeta())
+---@field comparers { [type]: equality_comparer }
 
 ---@generic T
 ---@param list T[]
@@ -183,6 +74,7 @@ local function validateIter(iter)
     end
 end
 
+---@return metatable
 local function makeListMeta()
     return {
         __index = list_impl,
@@ -190,6 +82,7 @@ local function makeListMeta()
     }
 end
 
+---@return metatable
 local function makeEnumerableMeta()
     return {
         __index = enumerable_impl,
@@ -197,6 +90,7 @@ local function makeEnumerableMeta()
     }
 end
 
+---@return metatable
 local function makeIterMeta(src_view)
     return {
         __index = iter_impl,
@@ -206,6 +100,393 @@ local function makeIterMeta(src_view)
         end
     }
 end
+
+---@type fun(a: equality_comparer, b: equality_comparer): equality_comparer
+local combineComparers
+
+---@return metatable
+local function makeComparerMeta()
+    return {
+        __band = function(self, b)
+            return combineComparers(self, b)
+        end,
+        __type = "equality_comparer"
+    }
+end
+
+local function makeCombinedComparer(by_types)
+    return {
+        comparers = by_types,
+        is_combined = function() return true end,
+        compare = function(self, a, b, prepare_for_next)
+            if type(a) ~= type(b) then return false end
+            local comparers = self.comparers[type(a)]
+            if not comparers then
+                if prepare_for_next then return a, b else return a == b end
+            end
+            local comparers_count = #comparers
+
+            if comparers_count == 1 then
+                return comparers[1].compare(self, a, b, prepare_for_next)
+            else
+                local to_compare_a = a
+                local to_compare_b = b
+                for i = 1, comparers_count - 1 do
+                    to_compare_a, to_compare_b = comparers[i].compare(self, to_compare_a, to_compare_b, true)
+                end
+                return comparers[comparers_count].compare(self, to_compare_a, to_compare_b, prepare_for_next)
+            end
+        end
+    }
+end
+
+combineComparers = function(a, b)
+    if a:is_combined() and b:is_combined() then
+        local keys_by_type = {}
+        for type, comparers in pairs(a.comparers) do
+            keys_by_type[type] = keys_by_type[type] or {}
+
+            for _, comparer in ipairs(comparers) do
+                keys_by_type[type][comparer:key()] = true
+            end
+        end
+        for type, comparers in pairs(b.comparers) do
+            keys_by_type[type] = keys_by_type[type] or {}
+
+            for i, comparer in ipairs(comparers) do
+                if keys_by_type[type][comparer:key()] then
+                    table.remove(b.comparers[type], i)
+                end
+            end
+        end
+        local by_type = {}
+        for type, comparers in pairs(a.comparers) do
+            by_type[type] = by_type[type] or {}
+
+            for _, comparer in pairs(comparers) do
+                table.insert(by_type[type], comparer)
+            end
+        end
+        for type, comparers in pairs(b.comparers) do
+            by_type[type] = by_type[type] or {}
+
+            for _, comparer in pairs(comparers) do
+                table.insert(by_type[type], comparer)
+            end
+        end
+        for _, comparers in pairs(by_type) do
+            table.sort(comparers, function(a, b) return a.priority > b.priority end)
+        end
+        return setmetatable(makeCombinedComparer(by_type), makeComparerMeta())
+    elseif not a:is_combined() and not b:is_combined() then
+        if a:key() == b:key() then return a end
+        if b.priority > a.priority then
+            a, b = b, a
+        end
+        local by_type = {}
+        for _, type in pairs(a:types()) do
+            by_type[type] = by_type[type] or {}
+
+            table.insert(by_type[type], a)
+        end
+        for _, type in pairs(b:types()) do
+            by_type[type] = by_type[type] or {}
+
+            table.insert(by_type[type], b)
+        end
+        return setmetatable(makeCombinedComparer(by_type), makeComparerMeta())
+    else
+        local combined = a:is_combined() and a or b
+        local not_combined = a:is_combined() and b or a
+        for _, comperers in pairs(combined.comparers) do
+            for _, comparer in pairs(comperers) do
+                if comparer:key() == not_combined:key() then
+                    return combined
+                end
+            end
+        end
+        local by_type = {}
+        for type, comparers in pairs(combined.comparers) do
+            by_type[type] = by_type[type] or {}
+
+            for _, comparer in pairs(comparers) do
+                table.insert(by_type[type], comparer)
+            end
+        end
+        for _, type in pairs(not_combined:types()) do
+            by_type[type] = by_type[type] or {}
+
+            table.insert(by_type[type], not_combined)
+        end
+        for _, comparers in pairs(by_type) do
+            table.sort(comparers, function(a, b) return a.priority > b.priority end)
+        end
+        return setmetatable(makeCombinedComparer(by_type), makeComparerMeta())
+    end
+end
+
+---@type equality_comparer
+linq.IGNORE_CASE = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "string" or type(b) ~= "string" then return a == b end
+        if prepare_for_next then return a:lower(), b:lower() else return a:lower() == b:lower() end
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "string:ignore_case"
+    end,
+    types = function()
+        return { "string" }
+    end,
+    priority = 0
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.IGNORE_WHITESPACE = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "string" or type(b) ~= "string" then return a == b end
+        if prepare_for_next then
+            return a:gsub("%s+", ""), b:gsub("%s+", "")
+        else
+            return a:gsub("%s+", "") ==
+                b:gsub("%s+", "")
+        end
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "string:ignore_whitespace"
+    end,
+    types = function()
+        return { "string" }
+    end,
+    priority = 0
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.TABLE_EQUAL = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+        local a_keys = {}
+        local b_keys = {}
+        for key in pairs(a) do
+            table.insert(a_keys, key)
+        end
+        for key in pairs(b) do
+            table.insert(b_keys, key)
+        end
+        table.sort(a_keys)
+        table.sort(b_keys)
+        if #a_keys ~= #b_keys then return false end
+        for i = 1, #a_keys do
+            if a_keys[i] ~= b_keys[i] then return false end
+            local a_value = a[a_keys[i]]
+            local b_value = b[b_keys[i]]
+            if not self:compare(a_value, b_value) then return false end
+        end
+        return true
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "table:equal"
+    end,
+    types = function()
+        return { "table" }
+    end,
+    priority = 1
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.TABLE_SUBSET = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+        for key in pairs(a) do
+            if b[key] == nil then return false end
+            local a_value = a[key]
+            local b_value = b[key]
+            if not self:compare(a_value, b_value) then return false end
+        end
+        return true
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "table:subset"
+    end,
+    types = function()
+        return { "table" }
+    end,
+    priority = 1
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.TABLE_SUPERSET = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+        for key in pairs(b) do
+            if a[key] == nil then return false end
+            local a_value = a[key]
+            local b_value = b[key]
+            if not self:compare(a_value, b_value) then return false end
+        end
+        return true
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "table:superset"
+    end,
+    types = function()
+        return { "table" }
+    end,
+    priority = 1
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.TABLE_CHECK_TYPES = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+        if prepare_for_next then
+            local a_with_types = {}
+            local b_with_types = {}
+            for key, value in pairs(a) do
+                if type(value) == "table" then
+                    a_with_types[key] = value
+                else
+                    a_with_types[key] = type(value)
+                end
+            end
+            for key, value in pairs(b) do
+                if type(value) == "table" then
+                    b_with_types[key] = value
+                else
+                    b_with_types[key] = type(value)
+                end
+            end
+            return a_with_types, b_with_types
+        else
+            for key in pairs(a) do
+                if b[key] == nil then goto continue end
+                local a_value = a[key]
+                local b_value = b[key]
+                if type(a_value) ~= type(b_value) then return false end
+                if type(a_value) == "table" then
+                    if not self:compare(a_value, b_value) then return false end
+                end
+                ::continue::
+            end
+            for key in pairs(b) do
+                if a[key] == nil then goto continue end
+                local a_value = a[key]
+                local b_value = b[key]
+                if type(a_value) ~= type(b_value) then return false end
+                if type(a_value) == "table" then
+                    if not self:compare(a_value, b_value) then return false end
+                end
+                ::continue::
+            end
+            return true
+        end
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "table:check_types"
+    end,
+    types = function()
+        return { "table" }
+    end,
+    priority = 2
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.EPSILON_EQUAL = setmetatable({
+    epsilon = 1e-10,
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "number" or type(b) ~= "number" then return a == b end
+        return math.abs(a - b) <= self.epsilon
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "number:epsilon"
+    end,
+    types = function()
+        return { "number" }
+    end,
+    priority = 0
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.ROUNDED_EQUAL = setmetatable({
+    decimals = 2,
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "number" or type(b) ~= "number" then return a == b end
+        local factor = 10 ^ self.decimals
+        return math.floor(a * factor + 0.5) == math.floor(b * factor + 0.5)
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "number:rounded"
+    end,
+    types = function()
+        return { "number" }
+    end,
+    priority = 0
+}, makeComparerMeta())
+
+---@param min number
+---@param max number
+---@return equality_comparer
+function linq.IN_RANGE(min, max)
+    return setmetatable({
+        min = min,
+        max = max,
+        compare = function(self, a, b, prepare_for_next)
+            if type(a) ~= "number" then return false end
+            -- b is ignored, we're checking if a is in range
+            return a >= self.min and a <= self.max
+        end,
+        is_combined = function() return false end,
+        key = function()
+            return "number:range_" .. min .. "_" .. max
+        end,
+        types = function()
+            return { "number" }
+        end,
+        priority = 0
+    }, makeComparerMeta())
+end
+
+---@type equality_comparer
+linq.TRIM_EQUAL = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if type(a) ~= "string" or type(b) ~= "string" then return a == b end
+        local trimmed_a = a:match("^%s*(.-)%s*$")
+        local trimmed_b = b:match("^%s*(.-)%s*$")
+        if prepare_for_next then return trimmed_a, trimmed_b else return trimmed_a == trimmed_b end
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "string:trim"
+    end,
+    types = function()
+        return { "string" }
+    end,
+    priority = 0
+}, makeComparerMeta())
+
+---@type equality_comparer
+linq.IGNORE_MISSING = setmetatable({
+    compare = function(self, a, b, prepare_for_next)
+        if a == nil and b == nil then return true end
+        if a == nil or b == nil then return false end
+        return a == b
+    end,
+    is_combined = function() return false end,
+    key = function()
+        return "any:nil_safe"
+    end,
+    types = function()
+        return { "nil", "string", "number", "boolean", "table", "function", "userdata", "thread" }
+    end,
+    priority = 1
+}, makeComparerMeta())
 
 local function enumerable_impl_distinct_next_self(iter, enumerable)
     validateIter(iter)
@@ -376,45 +657,219 @@ end
 ---@overload fun(self: enumerable<T>, predicate: string): enumerable<T>
 ---@overload fun(self: enumerable<T>, predicate: table): enumerable<T>
 ---@overload fun(self: enumerable<T>, predicate: table, equality_comparer: equality_comparer): enumerable<T>
-function enumerable_impl:where(predicate, comparer)
-    return map(type(predicate))
-        :Case("function", function(_)
+---@overload fun(self: enumerable<T>, selector: fun(item: T): any): enumerable<T>
+---@overload fun(self: enumerable<T>, selector: fun(item: T): any, value: any, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<T>, selector: fun(item: T): any, value: any): enumerable<T>
+---@overload fun(self: enumerable<T>, selector: string): enumerable<T>
+---@overload fun(self: enumerable<T>, selector: string, value: any): enumerable<T>
+---@overload fun(self: enumerable<T>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<T>
+function enumerable_impl:where(predicate_or_selector, value_or_comparer, equality_comparer)
+    return map({
+            {
+                type = type(predicate_or_selector),
+            },
+            {
+                type = type(value_or_comparer),
+                ext_type = getmetatable(value_or_comparer) ~= nil and getmetatable(value_or_comparer).__type or nil
+            },
+            {
+                type = type(equality_comparer),
+                ext_type = getmetatable(equality_comparer) ~= nil and getmetatable(equality_comparer).__type or nil
+            }
+        })
+        :Case({
+                { type = "function" },
+                { type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: fun(item: T): boolean): enumerable<T>|fun(self: enumerable<T>, selector: fun(item: T): any): enumerable<T>
+            function(_)
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        while value ~= nil and not predicate_or_selector(value) do
+                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        end
+                        return value
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+                { type = "string" },
+                { type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: string): enumerable<T>
+            function(_)
+                -- predicate
+                local predicate = predicate_or_selector --[[@as string]]
+                if string.find(predicate, "=>") ~= nil then
+                    local func = predicate_parser:GetPredicateFunction(predicate)
+                    if not func then
+                        error("Invalid predicate string: " .. predicate)
+                    end
+                    return setmetatable({
+                        __src = self,
+                        __next = function(iter, enumerable)
+                            validateIter(iter)
+
+                            local value = enumerable.__src.__next(iter, enumerable.__src)
+                            while value ~= nil and not func(value) do
+                                value = enumerable.__src.__next(iter, enumerable.__src)
+                            end
+                            return value
+                        end
+                    }, makeEnumerableMeta())
+                else
+                    -- selector (key)
+                    return setmetatable({
+                        __src = self,
+                        __next = function(iter, enumerable)
+                            validateIter(iter)
+
+                            local value = enumerable.__src.__next(iter, enumerable.__src)
+                            while value ~= nil and value[predicate_or_selector] == nil do
+                                value = enumerable.__src.__next(iter, enumerable.__src)
+                            end
+                            return value
+                        end
+                    }, makeEnumerableMeta())
+                end
+            end)
+        :Case({
+                { type = "table" },
+                { type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: table): enumerable<T>
+            function(_)
+                local comparer = linq.TABLE_SUPERSET
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        while value ~= nil and not comparer:compare(value, predicate_or_selector) do
+                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        end
+                        return value
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+                { type = "table" },
+                { type = "table", ext_type = "equality_comparer" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: table, equality_comparer: equality_comparer): enumerable<T>
+            function(_)
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        while value ~= nil and not value_or_comparer:compare(value, predicate_or_selector) do
+                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        end
+                        return value
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+                { type = "function" },
+                {},
+                { type = "table",   ext_type = "equality_comparer" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, value: any, equality_comparer: equality_comparer): enumerable<T>
+            function(_)
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        while value ~= nil and not equality_comparer:compare(predicate_or_selector(value), value_or_comparer) do
+                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        end
+                        return value
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+                { type = "function" },
+                {},
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, value: any): enumerable<T>
+            function(_)
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        while value ~= nil and not (predicate_or_selector(value) == value_or_comparer) do
+                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        end
+                        return value
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+            { type = "string" },
+            {},
+            { type = "nil" }
+        },
+        ---@generic T
+        ---@type fun(self: enumerable<T>, selector: string, value: any): enumerable<T>
+        function(_)
             return setmetatable({
                 __src = self,
                 __next = function(iter, enumerable)
                     validateIter(iter)
 
                     local value = enumerable.__src.__next(iter, enumerable.__src)
-                    while value ~= nil and not predicate(value) do
+                    while value ~= nil and not (value[predicate_or_selector] == value_or_comparer) do
                         value = enumerable.__src.__next(iter, enumerable.__src)
                     end
                     return value
                 end
             }, makeEnumerableMeta())
         end)
-        :Case("string", function(_)
-            local func = predicate_parser:GetPredicateFunction(predicate)
-            if func == nil then
-                error("Invalid predicate string: " .. predicate)
-            end
-
+        :Case({
+            { type = "string" },
+            {},
+            { type = "table",   ext_type = "equality_comparer" }
+        },
+        ---@generic T
+        ---@type fun(self: enumerable<T>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<T>
+        function(_)
             return setmetatable({
                 __src = self,
                 __next = function(iter, enumerable)
                     validateIter(iter)
 
                     local value = enumerable.__src.__next(iter, enumerable.__src)
-                    while value ~= nil and not func(value) do
+                    while value ~= nil and not equality_comparer:compare(value[predicate_or_selector], value_or_comparer) do
                         value = enumerable.__src.__next(iter, enumerable.__src)
                     end
                     return value
                 end
             }, makeEnumerableMeta())
-        end)
-        :Case("table", function(_)
         end)
         :Default(function(x)
-            error("Unsupported predicate type: " .. x)
+            error("no signature enumerable<T>:where("..(x[1].type or "nil")..", "..(x[2].type or "nil")..": "..(x[2].ext_type or "nil")..", "..(x[3].type or "nil")..": "..(x[3].ext_type or "nil")..")")
         end)
         :Result()
 end
@@ -468,6 +923,23 @@ function list_impl:distinct(...)
     validateList(self)
 
     return self:enumerate():distinct(...)
+end
+
+---@generic T
+---@overload fun(self: list<T>, predicate: fun(item: T): boolean): enumerable<T>
+---@overload fun(self: list<T>, predicate: string): enumerable<T>
+---@overload fun(self: list<T>, predicate: table): enumerable<T>
+---@overload fun(self: list<T>, predicate: table, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: list<T>, selector: fun(item: T): any): enumerable<T>
+---@overload fun(self: list<T>, selector: fun(item: T): any, value: any, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: list<T>, selector: fun(item: T): any, value: any): enumerable<T>
+---@overload fun(self: list<T>, selector: string): enumerable<T>
+---@overload fun(self: list<T>, selector: string, value: any): enumerable<T>
+---@overload fun(self: list<T>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<T>
+function list_impl:where(...)
+    validateList(self)
+
+    return self:enumerate():where(...)
 end
 
 ---@generic T

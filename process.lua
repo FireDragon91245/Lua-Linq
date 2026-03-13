@@ -9,18 +9,21 @@ local test1 = linq.list(test)
 ---@type number
 local test = 1
 
-local list = linq.list(1, 2, 2, 3, 4, test, 5.1, "")
-
-local list2 = linq.list(list)
-
-local list3 = list:copy()
-
-local enum = list:enumerate()
-
-local list4 = linq.list(enum)
+local list = linq.list(
+    { a = 1 },
+    { b = 2 },
+    { a = 1, c = 3},
+    { a = "ABC" }
+)
 
 for value in list:iter() do
     print(value)
+end
+
+print("----")
+
+for value in list:where({ a = "abc" }, linq.TABLE_EQUAL & linq.IGNORE_CASE):iter() do
+    print(value.a)
 end
 
 print("----")

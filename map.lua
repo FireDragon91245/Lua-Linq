@@ -25,7 +25,7 @@ end
 
 local function Count(obj)
     local count = 0
-    for k, _ in ipairs(obj) do
+    for _, _ in pairs(obj) do
         count = count + 1
     end
 
