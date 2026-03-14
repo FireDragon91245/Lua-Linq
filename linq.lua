@@ -44,6 +44,34 @@ local function types(...)
     return result
 end
 
+---@param value any
+---@param argc number|nil
+---@return table
+local function makeArgDescriptor(value, argc)
+    local descriptor = {
+        type = type(value),
+        ext_type = getmetatable(value) ~= nil and getmetatable(value).__type or nil
+    }
+
+    if argc ~= nil then
+        descriptor.argc = argc
+    end
+
+    return descriptor
+end
+
+local NIL_KEY = {}
+
+---@param value any
+---@return any
+local function normalizeDistinctKey(value)
+    if value == nil then
+        return NIL_KEY
+    end
+
+    return value
+end
+
 local function validateList(list)
     if getmetatable(list) == nil or getmetatable(list).__type ~= "list" then
         error("Expected list, got " .. type(list))
@@ -495,13 +523,17 @@ linq.IGNORE_MISSING = setmetatable({
 ---@overload fun(self: enumerable<T>, keySelector: fun(item: T): (any), comparer: equality_comparer): enumerable<T>
 ---@overload fun(self: enumerable<T>, keySelector: string): enumerable<T>
 ---@overload fun(self: enumerable<T>, keySelector: string, comparer: equality_comparer): enumerable<T>
-function enumerable_impl:distinct(comparer_or_keySelector, comparer)
+function enumerable_impl:distinct(...)
+    local argc = select("#", ...)
+    local comparer_or_keySelector = select(1, ...)
+    local comparer = select(2, ...)
+
     return map({
-            { type = type(comparer_or_keySelector), ext_type = getmetatable(comparer_or_keySelector) ~= nil and getmetatable(comparer_or_keySelector).__type or nil },
-            { type = type(comparer),                ext_type = getmetatable(comparer) ~= nil and getmetatable(comparer).__type or nil }
+            makeArgDescriptor(comparer_or_keySelector, argc),
+            makeArgDescriptor(comparer)
         })
         :Case({
-                { type = "nil" },
+                { argc = 0,    type = "nil" },
                 { type = "nil" }
             },
             ---@generic T
@@ -531,7 +563,7 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "table", ext_type = "equality_comparer" },
+                { argc = 1,    type = "table", ext_type = "equality_comparer" },
                 { type = "nil" }
             },
             ---@generic T
@@ -570,15 +602,12 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                             end
                             value = enumerable.__src.__next(iter, enumerable.__src)
                         end
-                        if value ~= nil then
-                            iter.__data.seen[value] = true
-                        end
                         return value
                     end
                 }, makeEnumerableMeta())
             end)
         :Case({
-            { type = "function" },
+            { argc = 1,    type = "function" },
             { type = "nil" }
         }, function(_)
             return setmetatable({
@@ -594,19 +623,24 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                     iter.__data = iter.__data or {}
                     iter.__data.seen = iter.__data.seen or {}
 
-                    while value ~= nil and iter.__data.seen[comparer_or_keySelector(value)] do
+                    local value_key = normalizeDistinctKey(comparer_or_keySelector(value))
+
+                    while value ~= nil and iter.__data.seen[value_key] do
                         value = enumerable.__src.__next(iter, enumerable.__src)
+                        if value ~= nil then
+                            value_key = normalizeDistinctKey(comparer_or_keySelector(value))
+                        end
                     end
                     if value ~= nil then
-                        iter.__data.seen[comparer_or_keySelector(value)] = true
+                        iter.__data.seen[value_key] = true
                     end
                     return value
                 end
             }, makeEnumerableMeta())
         end)
         :Case({
-                { type = "function" },
-                { type = "table",   ext_type = "equality_comparer" }
+                { argc = 2,       type = "function" },
+                { type = "table", ext_type = "equality_comparer" }
             },
             ---@generic T
             ---@type fun(self: enumerable<T>, keySelector: fun(item: T): any, comparer: equality_comparer): enumerable<T>
@@ -626,22 +660,23 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
 
                         while value ~= nil do
                             local value_key = comparer_or_keySelector(value)
-                            ---@type table
                             local seen_by_type = iter.__data.seen[type(value_key)]
                             if seen_by_type == nil then
                                 iter.__data.seen[type(value_key)] = { value_key }
                                 break
                             end
-                            local found = false
-                            for _, seen_value in pairs(seen_by_type) do
-                                if comparer:compare(value_key, seen_value) then
-                                    found = true
+                            if value_key ~= nil then
+                                local found = false
+                                for _, seen_value in pairs(seen_by_type) do
+                                    if comparer:compare(value_key, seen_value) then
+                                        found = true
+                                        break
+                                    end
+                                end
+                                if not found then
+                                    table.insert(seen_by_type, value_key)
                                     break
                                 end
-                            end
-                            if not found then
-                                table.insert(seen_by_type, value_key)
-                                break
                             end
                             value = enumerable.__src.__next(iter, enumerable.__src)
                         end
@@ -650,7 +685,7 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "string" },
+                { argc = 1,    type = "string" },
                 { type = "nil" }
             },
             ---@generic T
@@ -681,11 +716,16 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        while value ~= nil and iter.__data.seen[predicate(value)] do
+                        local value_key = normalizeDistinctKey(predicate(value))
+
+                        while value ~= nil and iter.__data.seen[value_key] do
                             value = enumerable.__src.__next(iter, enumerable.__src)
+                            if value ~= nil then
+                                value_key = normalizeDistinctKey(predicate(value))
+                            end
                         end
                         if value ~= nil then
-                            iter.__data.seen[predicate(value)] = true
+                            iter.__data.seen[value_key] = true
                         end
 
                         return value
@@ -693,7 +733,7 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "string" },
+                { argc = 2,       type = "string" },
                 { type = "table", ext_type = "equality_comparer" }
             },
             ---@generic T
@@ -726,22 +766,23 @@ function enumerable_impl:distinct(comparer_or_keySelector, comparer)
 
                         while value ~= nil do
                             local value_key = predicate(value)
-                            ---@type table
                             local seen_by_type = iter.__data.seen[type(value_key)]
                             if seen_by_type == nil then
                                 iter.__data.seen[type(value_key)] = { value_key }
                                 break
                             end
-                            local found = false
-                            for _, seen_value in pairs(seen_by_type) do
-                                if comparer:compare(value_key, seen_value) then
-                                    found = true
+                            if value_key ~= nil then
+                                local found = false
+                                for _, seen_value in pairs(seen_by_type) do
+                                    if comparer:compare(value_key, seen_value) then
+                                        found = true
+                                        break
+                                    end
+                                end
+                                if not found then
+                                    table.insert(seen_by_type, value_key)
                                     break
                                 end
-                            end
-                            if not found then
-                                table.insert(seen_by_type, value_key)
-                                break
                             end
                             value = enumerable.__src.__next(iter, enumerable.__src)
                         end
@@ -769,14 +810,19 @@ end
 ---@overload fun(self: enumerable<T>, selector: string): enumerable<T>
 ---@overload fun(self: enumerable<T>, selector: string, value: any): enumerable<T>
 ---@overload fun(self: enumerable<T>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<T>
-function enumerable_impl:where(predicate_or_selector, value_or_comparer, equality_comparer)
+function enumerable_impl:where(...)
+    local argc = select("#", ...)
+    local predicate_or_selector = select(1, ...)
+    local value_or_comparer = select(2, ...)
+    local equality_comparer = select(3, ...)
+
     return map({
-            { type = type(predicate_or_selector) },
-            { type = type(value_or_comparer),    ext_type = getmetatable(value_or_comparer) ~= nil and getmetatable(value_or_comparer).__type or nil },
-            { type = type(equality_comparer),    ext_type = getmetatable(equality_comparer) ~= nil and getmetatable(equality_comparer).__type or nil }
+            makeArgDescriptor(predicate_or_selector, argc),
+            makeArgDescriptor(value_or_comparer),
+            makeArgDescriptor(equality_comparer)
         })
         :Case({
-                { type = "function" },
+                { argc = 1,    type = "function" },
                 { type = "nil" },
                 { type = "nil" }
             },
@@ -797,7 +843,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "string" },
+                { argc = 1,    type = "string" },
                 { type = "nil" },
                 { type = "nil" }
             },
@@ -830,7 +876,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "table" },
+                { argc = 1,    type = "table" },
                 { type = "nil" },
                 { type = "nil" }
             },
@@ -852,7 +898,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "table" },
+                { argc = 2,       type = "table" },
                 { type = "table", ext_type = "equality_comparer" },
                 { type = "nil" }
             },
@@ -873,9 +919,9 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "function" },
+                { argc = 3,       type = "function" },
                 {},
-                { type = "table",   ext_type = "equality_comparer" }
+                { type = "table", ext_type = "equality_comparer" }
             },
             ---@generic T
             ---@type fun(self: enumerable<T>, selector: fun(item: T): any, value: any, equality_comparer: equality_comparer): enumerable<T>
@@ -894,7 +940,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "function" },
+                { argc = 2,    type = "function" },
                 {},
                 { type = "nil" }
             },
@@ -915,7 +961,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "string" },
+                { argc = 2,    type = "string" },
                 {},
                 { type = "nil" }
             },
@@ -948,7 +994,7 @@ function enumerable_impl:where(predicate_or_selector, value_or_comparer, equalit
                 }, makeEnumerableMeta())
             end)
         :Case({
-                { type = "string" },
+                { argc = 3,       type = "string" },
                 {},
                 { type = "table", ext_type = "equality_comparer" }
             },

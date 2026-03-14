@@ -225,10 +225,7 @@ function predicates:GetQueryFunction(predicate, ...)
             fullFunc = fullFunc .. "return "
         end
         fullFunc = fullFunc .. predicate .. self.footer
-        local loaded, err = loadstring(fullFunc)
-        if err ~= nil then
-            print("Error loadfunction PredicateParser-ln:104 Error:", err, " Code:", fullFunc)
-        end
+        local loaded = loadstring(fullFunc)
         if loaded == nil then
             return nil
         end
