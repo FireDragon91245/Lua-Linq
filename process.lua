@@ -22,7 +22,7 @@ end
 
 print("----")
 
-for value in list:where({ a = "abc" }, linq.TABLE_EQUAL & linq.IGNORE_CASE):iter() do
+for value in list:where("x => x.a", 1):iter() do
     print(value.a)
 end
 
@@ -33,5 +33,15 @@ local distinct = list:distinct()
 local iter = distinct:iter()
 
 for value in iter do
+    print(value)
+end
+
+print("----")
+
+local list2 = linq.list("ABC", "abc", "aBc", "TEST", "test", "Hallo")
+
+for value in list2:distinct(function (item)
+    return string.sub(item, 1, 1)
+end):iter() do
     print(value)
 end
