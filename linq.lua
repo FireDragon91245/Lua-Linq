@@ -1037,6 +1037,135 @@ function enumerable_impl:where(...)
         :Result()
 end
 
+---@generic T, U
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (U)): enumerable<U>
+---@overload fun(self: enumerable<T>, selector: string): enumerable<any>
+function enumerable_impl:select(...)
+    local argc = select("#", ...)
+    local selector = select(1, ...)
+
+    return map({
+            makeArgDescriptor(selector, argc)
+        })
+        :Case({
+                { argc = 1, type = "function" }
+            },
+            ---@generic T, U
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): U): enumerable<U>
+            function(_)
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        if value == nil then
+                            return nil
+                        end
+                        return selector(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Case({
+                { argc = 1, type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string): enumerable<any>
+            function(_)
+                local is_predicate = string.find(selector --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = predicate_parser:GetPredicateFunction(selector)
+                    if not selector_func then
+                        error("Invalid selector string: " .. selector)
+                    end
+                else
+                    selector_func = function(item)
+                        return item[selector]
+                    end
+                end
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        local value = enumerable.__src.__next(iter, enumerable.__src)
+                        if value == nil then
+                            return nil
+                        end
+                        return selector_func(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :Default(function(x)
+            error("no signature enumerable<T>:select(" ..
+                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ")")
+        end)
+        :Result()
+end
+
+---@generic T, U
+---@overload fun(self: enumerable<T>, consumer: fun(enum: iter<T>): (U)): U
+---@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T)): U
+---@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T), finalizer: fun(acc: U): (U)): U
+function enumerable_impl:collect(...)
+    local argc = select("#", ...)
+    local consumer_or_constructor = select(1, ...)
+    local consumer = select(2, ...)
+    local finalizer = select(3, ...)
+
+    return map({
+            makeArgDescriptor(consumer_or_constructor, argc),
+            makeArgDescriptor(consumer),
+            makeArgDescriptor(finalizer)
+        })
+        :Case({
+                { argc = 1,    type = "function" },
+                { type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T, U
+            ---@type fun(self: enumerable<T>, consumer: fun(enum: iter<T>): U): U
+            function(_)
+                return consumer_or_constructor(self:iter())
+            end)
+        :Case({
+                { argc = 2,         type = "function" },
+                { type = "function" },
+                { type = "nil" }
+            },
+            ---@generic T, U
+            ---@type fun(self: enumerable<T>, constructor: fun(): U, consumer: fun(acc: U, item: T)): U
+            function(_)
+                local acc = consumer_or_constructor()
+                for item in self:iter() do
+                    consumer(acc, item)
+                end
+                return acc
+            end)
+        :Case({
+                { argc = 3,         type = "function" },
+                { type = "function" },
+                { type = "function" }
+            },
+            ---@generic T, U
+            ---@type fun(self: enumerable<T>, constructor: fun(): U, consumer: fun(acc: U, item: T), finalizer: fun(acc: U): U): U
+            function(_)
+                local acc = consumer_or_constructor()
+                for item in self:iter() do
+                    consumer(acc, item)
+                end
+                return finalizer(acc)
+            end)
+        :Default(function(x)
+            error("no signature enumerable<T>:collect(" ..
+                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
+                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ", " ..
+                (x[3].type or "nil") .. ": " .. (x[3].ext_type or "nil") .. ")")
+        end)
+        :Result()
+end
+
 ---@generic T
 ---@param self enumerable<T>
 ---@return iter<T>
@@ -1109,6 +1238,25 @@ function list_impl:where(...)
     return self:enumerate():where(...)
 end
 
+---@generic T, U
+---@overload fun(self: list<T>, selector: fun(item: T): (U)): enumerable<U>
+---@overload fun(self: list<T>, selector: string): enumerable<any>
+function list_impl:select(...)
+    validateList(self)
+
+    return self:enumerate():select(...)
+end
+
+---@generic T, U
+---@overload fun(self: enumerable<T>, consumer: fun(enum: iter<T>): (U)): U
+---@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T)): U
+---@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T), finalizer: fun(acc: U): (U)): U
+function list_impl:collect(...)
+    validateList(self)
+
+    return self:enumerate():collect(...)
+end
+
 ---@generic T
 ---@param self list<T>
 ---@return list<T>
@@ -1122,14 +1270,36 @@ function list_impl:copy()
     return setmetatable(newList, makeListMeta())
 end
 
-local function list_from_enumerable(enumerable)
-    validateEnumerable(enumerable)
+---@generic T
+---@param self list<T>
+---@param item T
+function list_impl:add(item)
+    validateList(self)
+
+    table.insert(self, item)
+end
+
+---@generic T, U
+---@param self list<T>
+---@param item U
+---@return list<T|U>
+function list_impl:add_transform(item)
+    validateList(self)
+
+    table.insert(self, item)
+
+    return self
+end
+
+---@generic T
+---@param iter iter<T>
+---@return list<T> 
+local function list_from_iter(iter)
+    validateIter(iter)
 
     local newList = {}
-    local next = enumerable:next()
-    while next ~= nil do
-        table.insert(newList, next)
-        next = enumerable:next()
+    for value in iter do
+        table.insert(newList, value)
     end
     return setmetatable(newList, makeListMeta())
 end
@@ -1144,9 +1314,11 @@ function list_impl:iter()
 end
 
 ---@generic T
+---@overload fun(): list<any>
 ---@overload fun(...: T): list<T>
 ---@overload fun(list: list<T>): list<T>
 ---@overload fun(enumerable: enumerable<T>): list<T>
+---@overload fun(iter: iter<T>): list<T>
 ---@overload fun(table: table): list<any>
 function linq.list(...)
     if select("#", ...) == 1 and type(select(1, ...)) == "table" then
@@ -1154,7 +1326,10 @@ function linq.list(...)
             return select(1, ...):copy()
         end
         if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "enumerable" then
-            return list_from_enumerable(select(1, ...))
+            return list_from_iter(select(1, ...):iter())
+        end
+        if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "iter" then
+            return list_from_iter(select(1, ...))
         end
         return setmetatable(select(1, ...), makeListMeta())
     else

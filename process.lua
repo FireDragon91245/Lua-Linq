@@ -38,10 +38,30 @@ end
 
 print("----")
 
-local list2 = linq.list("ABC", "abc", "aBc", "TEST", "test", "Hallo")
+local example_list = linq.list("ABC", "abc", "aBc", "TEST", "test", "Hallo")
 
-for value in list2:distinct(function (item)
+local example_list_copy = linq.list(example_list:enumerate())
+
+local example_list_collect = example_list_copy:collect(function(enum)
+    return linq.list(enum):add_transform(1)
+end)
+
+local example_list2 = linq.list("ABC", "abc", "aBc", "TEST", "test", "Hallo")
+
+local step1 = example_list2:distinct(function (item)
     return string.sub(item, 1, 1)
-end):iter() do
+end)
+
+local step2 = step1:select(function (item)
+    return 1
+end)
+
+local step3 = step2:collect(function ()
+    return linq.list(1, 2)
+end, function (acc, item)
+    acc:add(item)
+end)
+
+for value in step3:iter() do
     print(value)
 end
