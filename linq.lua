@@ -536,13 +536,19 @@ linq.IGNORE_MISSING = setmetatable({
     priority = 1
 }, makeComparerMeta())
 
----@generic T
+---@generic T, K, V
 ---@overload fun(self: enumerable<T>): enumerable<T>
+---@overload fun(self: enumerable<K, V>): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, comparer: equality_comparer): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, keySelector: fun(item: T): (any)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, keySelector: fun(item: K, value: V): (any)): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, keySelector: fun(item: T): (any), comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, keySelector: fun(item: K, value: V): (any), comparer: equality_comparer): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, keySelector: string): enumerable<T>
+---@overload fun(self: enumerable<K, V>, keySelector: string): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, keySelector: string, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, keySelector: string, comparer: equality_comparer): enumerable<K, V>
 function enumerable_impl:distinct(...)
     local argc = select("#", ...)
     local comparer_or_keySelector = select(1, ...)
@@ -564,21 +570,21 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
 
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        while value ~= nil and iter.__data.seen[value] do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        while (#value ~= 0) and iter.__data.seen[value[#value]] do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        if value ~= nil then
-                            iter.__data.seen[value] = true
+                        if #value ~= 0 then
+                            iter.__data.seen[value[#value]] = true
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -594,35 +600,35 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
 
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        while value ~= nil do
-                            local seen_by_type = iter.__data.seen[type(value)]
+                        while #value ~= 0 do
+                            local seen_by_type = iter.__data.seen[type(value[#value])]
                             if seen_by_type == nil then
-                                iter.__data.seen[type(value)] = { value }
+                                iter.__data.seen[type(value[#value])] = { value[#value] }
                                 break
                             else
                                 local found = false
                                 for _, seen_value in pairs(seen_by_type) do
-                                    if comparer_or_keySelector --[[@as equality_comparer]]:compare(value, seen_value) then
+                                    if comparer_or_keySelector --[[@as equality_comparer]]:compare(value[#value], seen_value) then
                                         found = true
                                         break
                                     end
                                 end
                                 if not found then
-                                    table.insert(seen_by_type, value)
+                                    table.insert(seen_by_type, value[#value])
                                     break
                                 end
                             end
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -635,26 +641,26 @@ function enumerable_impl:distinct(...)
                 __next = function(iter, enumerable)
                     validateIter(iter)
 
-                    local value = enumerable.__src.__next(iter, enumerable.__src)
-                    if value == nil then
+                    local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                    if #value == 0 then
                         return nil
                     end
 
                     iter.__data = iter.__data or {}
                     iter.__data.seen = iter.__data.seen or {}
 
-                    local value_key = normalizeDistinctKey(comparer_or_keySelector(value))
+                    local value_key = normalizeDistinctKey(comparer_or_keySelector(table.unpack(value)))
 
-                    while value ~= nil and iter.__data.seen[value_key] do
-                        value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value ~= nil then
-                            value_key = normalizeDistinctKey(comparer_or_keySelector(value))
+                    while (#value ~= 0) and iter.__data.seen[value_key] do
+                        value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value ~= 0 then
+                            value_key = normalizeDistinctKey(comparer_or_keySelector(table.unpack(value)))
                         end
                     end
-                    if value ~= nil then
+                    if #value ~= 0 then
                         iter.__data.seen[value_key] = true
                     end
-                    return value
+                    return table.unpack(value)
                 end
             }, makeEnumerableMeta())
         end)
@@ -670,16 +676,16 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
 
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        while value ~= nil do
-                            local value_key = comparer_or_keySelector(value)
+                        while #value ~= 0 do
+                            local value_key = comparer_or_keySelector(table.unpack(value))
                             local seen_by_type = iter.__data.seen[type(value_key)]
                             if seen_by_type == nil then
                                 iter.__data.seen[type(value_key)] = { value_key }
@@ -698,9 +704,9 @@ function enumerable_impl:distinct(...)
                                     break
                                 end
                             end
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -719,8 +725,8 @@ function enumerable_impl:distinct(...)
                         error("Invalid predicate string: " .. comparer_or_keySelector)
                     end
                 else
-                    predicate = function(item)
-                        return item[comparer_or_keySelector]
+                    predicate = function(...)
+                        return select(-1, ...)[comparer_or_keySelector]
                     end
                 end
                 return setmetatable({
@@ -728,27 +734,27 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
 
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        local value_key = normalizeDistinctKey(predicate(value))
+                        local value_key = normalizeDistinctKey(predicate(table.unpack(value)))
 
-                        while value ~= nil and iter.__data.seen[value_key] do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
-                            if value ~= nil then
-                                value_key = normalizeDistinctKey(predicate(value))
+                        while (#value ~= 0) and iter.__data.seen[value_key] do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
+                            if #value ~= 0 then
+                                value_key = normalizeDistinctKey(predicate(table.unpack(value)))
                             end
                         end
-                        if value ~= nil then
+                        if #value ~= 0 then
                             iter.__data.seen[value_key] = true
                         end
 
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -767,8 +773,8 @@ function enumerable_impl:distinct(...)
                         error("Invalid predicate string: " .. comparer_or_keySelector)
                     end
                 else
-                    predicate = function(item)
-                        return item[comparer_or_keySelector]
+                    predicate = function(...)
+                        return select(-1, ...)[comparer_or_keySelector]
                     end
                 end
                 return setmetatable({
@@ -776,16 +782,16 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value =  { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
 
                         iter.__data = iter.__data or {}
                         iter.__data.seen = iter.__data.seen or {}
 
-                        while value ~= nil do
-                            local value_key = predicate(value)
+                        while #value ~= 0 do
+                            local value_key = predicate(table.unpack(value))
                             local seen_by_type = iter.__data.seen[type(value_key)]
                             if seen_by_type == nil then
                                 iter.__data.seen[type(value_key)] = { value_key }
@@ -804,10 +810,10 @@ function enumerable_impl:distinct(...)
                                     break
                                 end
                             end
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
 
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)

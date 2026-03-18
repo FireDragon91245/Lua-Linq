@@ -10,14 +10,15 @@ local function table()
     return {
         ["a"] = 1,
         ["b"] = 2,
-        [1] = 3
+        [1] = 3,
+        ["c"] = 2
     }
 end
 
 local t = table()
 
 local dict = linq.dict(t)
-local enum2 = dict:enumerate():where("k, v => k == 1")
+local enum2 = dict:enumerate():distinct()
 local it = enum2:iter()
 
 for k, v in it do
