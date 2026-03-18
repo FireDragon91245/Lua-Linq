@@ -846,6 +846,18 @@ function enumerable_impl:where(...)
     local value_or_comparer = select(2, ...)
     local equality_comparer = select(3, ...)
 
+    local make_next_func = function (condition)
+        return function (iter, enumerable)
+            validateIter(iter)
+
+            local value = { enumerable.__src.__next(iter, enumerable.__src) }
+            while (#value ~= 0) and condition(value) do
+                value = { enumerable.__src.__next(iter, enumerable.__src) }
+            end
+            return table.unpack(value)
+        end
+    end
+
     return map({
             makeArgDescriptor(predicate_or_selector, argc),
             makeArgDescriptor(value_or_comparer),
@@ -861,15 +873,9 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not predicate_or_selector(table.unpack(value)) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not predicate_or_selector(table.unpack(value))
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -894,15 +900,9 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not predicate(table.unpack(value)) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not predicate(table.unpack(value))
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -916,15 +916,9 @@ function enumerable_impl:where(...)
                 local comparer = linq.TABLE_SUPERSET
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not comparer:compare((table.unpack(value)), predicate_or_selector) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not comparer:compare((table.unpack(value)), predicate_or_selector)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -937,15 +931,9 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not value_or_comparer:compare((table.unpack(value)), predicate_or_selector) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not value_or_comparer:compare((table.unpack(value)), predicate_or_selector)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -958,15 +946,9 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not equality_comparer:compare(predicate_or_selector(table.unpack(value)), value_or_comparer) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not equality_comparer:compare(predicate_or_selector(table.unpack(value)), value_or_comparer)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -979,15 +961,9 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not (predicate_or_selector(table.unpack(value)) == value_or_comparer) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not (predicate_or_selector(table.unpack(value)) == value_or_comparer)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -1012,15 +988,9 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not (predicate(table.unpack(value)) == value_or_comparer) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not (predicate(table.unpack(value)) == value_or_comparer)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Case({
@@ -1045,15 +1015,9 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = function(iter, enumerable)
-                        validateIter(iter)
-
-                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        while (#value ~= 0) and not equality_comparer:compare(predicate(table.unpack(value)), value_or_comparer) do
-                            value = { enumerable.__src.__next(iter, enumerable.__src) }
-                        end
-                        return table.unpack(value)
-                    end
+                    __next = make_next_func(function (value)
+                        return not equality_comparer:compare(predicate(table.unpack(value)), value_or_comparer)
+                    end)
                 }, makeEnumerableMeta())
             end)
         :Default(function(x)
