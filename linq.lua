@@ -7,13 +7,19 @@ local linq = {}
 ---@alias option<T> T | nil
 
 ---@class enumerable<T>
+---@class enumerable<K, V>
 local enumerable_impl = {}
 
 ---@class list<T>
 local list_impl = {}
 
+---@class dict<K, V>
+local dict_impl = {}
+
 ---@class iter<T>
 ---@operator call:(iter<T>): T
+---@class iter<K, V>
+---@operator call:(iter<K, V>): K, V
 local iter_impl = {}
 
 ---@class equality_comparer
@@ -102,6 +108,12 @@ local function validateIter(iter)
     end
 end
 
+local function validateDict(dict)
+    if getmetatable(dict) == nil or getmetatable(dict).__type ~= "dict" then
+        error("Expected dict, got " .. type(dict))
+    end
+end
+
 ---@return metatable
 local function makeListMeta()
     return {
@@ -139,6 +151,14 @@ local function makeComparerMeta()
             return combineComparers(self, b)
         end,
         __type = "equality_comparer"
+    }
+end
+
+---@return metatable
+local function makeDictMeta()
+    return {
+        __index = dict_impl,
+        __type = "dict"
     }
 end
 
@@ -799,17 +819,27 @@ function enumerable_impl:distinct(...)
         :Result()
 end
 
----@generic T
+---@generic T, K, V
 ---@overload fun(self: enumerable<T>, predicate: fun(item: T): (boolean)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, predicate: fun(key: K, value: V): (boolean)): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, predicate: string): enumerable<T>
+---@overload fun(self: enumerable<K, V>, predicate: string): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, predicate: table): enumerable<T>
+---@overload fun(self: enumerable<K, V>, predicate: table): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, predicate: table, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, predicate: table, equality_comparer: equality_comparer): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: fun(item: T): (any)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), value: any, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), value: any, equality_comparer: equality_comparer): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), value: any): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), value: any): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: string): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: string, value: any): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string, value: any): enumerable<K, V>
 ---@overload fun(self: enumerable<T>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<K, V>
 function enumerable_impl:where(...)
     local argc = select("#", ...)
     local predicate_or_selector = select(1, ...)
@@ -834,11 +864,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not predicate_or_selector(value) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not predicate_or_selector(table.unpack(value)) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -867,11 +897,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not predicate(value) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not predicate(table.unpack(value)) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -889,11 +919,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not comparer:compare(value, predicate_or_selector) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not comparer:compare((table.unpack(value)), predicate_or_selector) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -910,11 +940,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not value_or_comparer:compare(value, predicate_or_selector) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not value_or_comparer:compare((table.unpack(value)), predicate_or_selector) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -931,11 +961,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not equality_comparer:compare(predicate_or_selector(value), value_or_comparer) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not equality_comparer:compare(predicate_or_selector(table.unpack(value)), value_or_comparer) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -952,11 +982,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not (predicate_or_selector(value) == value_or_comparer) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not (predicate_or_selector(table.unpack(value)) == value_or_comparer) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -985,11 +1015,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not (predicate(value) == value_or_comparer) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not (predicate(table.unpack(value)) == value_or_comparer) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -1018,11 +1048,11 @@ function enumerable_impl:where(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        while value ~= nil and not equality_comparer:compare(predicate(value), value_or_comparer) do
-                            value = enumerable.__src.__next(iter, enumerable.__src)
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        while (#value ~= 0) and not equality_comparer:compare(predicate(table.unpack(value)), value_or_comparer) do
+                            value = { enumerable.__src.__next(iter, enumerable.__src) }
                         end
-                        return value
+                        return table.unpack(value)
                     end
                 }, makeEnumerableMeta())
             end)
@@ -1166,9 +1196,9 @@ function enumerable_impl:collect(...)
         :Result()
 end
 
----@generic T
----@param self enumerable<T>
----@return iter<T>
+---@generic T, K, V
+---@overload fun(self: enumerable<T>): iter<T>
+---@overload fun(self: enumerable<K, V>): iter<K, V>
 function enumerable_impl:iter()
     validateEnumerable(self)
 
@@ -1293,7 +1323,7 @@ end
 
 ---@generic T
 ---@param iter iter<T>
----@return list<T> 
+---@return list<T>
 local function list_from_iter(iter)
     validateIter(iter)
 
@@ -1311,6 +1341,72 @@ function list_impl:iter()
     validateList(self)
 
     return self:enumerate():iter()
+end
+
+---@generic K, V
+---@param self dict<K, V>
+---@return enumerable<K>
+function dict_impl:keys()
+    validateDict(self)
+
+    return setmetatable({
+        __src = self,
+        __next = function(iter, enumerable)
+            validateIter(iter)
+
+            iter.__data = iter.__data or {}
+            iter.__data.last_key = iter.__data.last_key or nil
+
+            local next_key, _ = next(enumerable.__src, iter.__data.last_key)
+            iter.__data.last_key = next_key
+            return next_key
+        end
+    }, makeEnumerableMeta())
+end
+
+---@generic K, V
+---@param self dict<K, V>
+---@return enumerable<V>
+function dict_impl:values()
+    validateDict(self)
+
+    return setmetatable({
+        __src = self,
+        __next = function(iter, enumerable)
+            validateIter(iter)
+
+            iter.__data = iter.__data or {}
+            iter.__data.last_key = iter.__data.last_key or nil
+
+            local next_key, next_value = next(enumerable.__src, iter.__data.last_key)
+            iter.__data.last_key = next_key
+            return next_value
+        end
+    }, makeEnumerableMeta())
+end
+
+---@generic K, V
+---@param self dict<K, V>
+---@return enumerable<K, V>
+function dict_impl:enumerate()
+    validateDict(self)
+
+    return setmetatable({
+        __src = self,
+        __next = function(iter, enumerable)
+            validateIter(iter)
+
+            iter.__data = iter.__data or {}
+            iter.__data.last_key = iter.__data.last_key or nil
+
+            local next_key, next_value = next(enumerable.__src, iter.__data.last_key)
+            iter.__data.last_key = next_key
+            if next_key == nil then
+                return nil
+            end
+            return next_key, next_value
+        end
+    }, makeEnumerableMeta())
 end
 
 ---@generic T
@@ -1334,6 +1430,45 @@ function linq.list(...)
         return setmetatable(select(1, ...), makeListMeta())
     else
         return setmetatable({ ... }, makeListMeta())
+    end
+end
+
+---@generic K, V
+---@overload fun(): dict<any, any>
+---@overload fun(table: { [K]: V }): dict<K, V>
+---@overload fun(dict: dict<K, V>): dict<K, V>
+---@overload fun(enumerable: enumerable<K, V>): dict<K, V>
+---@overload fun(iter: iter<K, V>): dict<K, V>
+---@overload fun(table: table): dict<any, any>
+function linq.dict(...)
+    if select("#", ...) == 1 and type(select(1, ...)) == "table" then
+        if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "dict" then
+            return select(1, ...):copy()
+        end
+        if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "enumerable" then
+            local newDict = {}
+            for k, v in select(1, ...):iter() do
+                newDict[k] = v
+            end
+            return setmetatable(newDict, makeDictMeta())
+        end
+        if getmetatable(select(1, ...)) ~= nil and getmetatable(select(1, ...)).__type == "iter" then
+            local newDict = {}
+            for k, v in select(1, ...) do
+                newDict[k] = v
+            end
+            return setmetatable(newDict, makeDictMeta())
+        end
+        return setmetatable(select(1, ...), makeDictMeta())
+    else
+        local newDict = {}
+        for i = 1, select("#", ...) do
+            local pair = select(i, ...)
+            for k, v in pairs(pair) do
+                newDict[k] = v
+            end
+        end
+        return setmetatable(newDict, makeDictMeta())
     end
 end
 
