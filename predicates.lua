@@ -1,4 +1,14 @@
+---@alias predicate_function fun(...: any): any
+
+---@class predicates
+---@field metatable metatable|nil
+---@field instance predicates|nil
+---@field compiledFunctions { [string]: predicate_function }|nil
+---@field funcHeader string|nil
+---@field funcArgs string|nil
+---@field footer string|nil
 local predicates = {}
+---@type predicates
 predicates.metatable = {
     __index = predicates,
 }
@@ -8,6 +18,7 @@ if loadstring == nil then
     loadstring = load
 end
 
+---@type integer[]
 local md5_shifts = {
     7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
     5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
@@ -15,24 +26,34 @@ local md5_shifts = {
     6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
 }
 
+---@type integer[]
 local md5_constants = {}
 for i = 1, 64 do
     md5_constants[i] = math.floor(math.abs(math.sin(i)) * 4294967296) & 0xffffffff
 end
 
+---@param value integer
+---@param amount integer
+---@return integer
 local function left_rotate(value, amount)
     return ((value << amount) | (value >> (32 - amount))) & 0xffffffff
 end
 
+---@param str string
+---@return string
 local function trim(str)
     return (str:gsub("^%s*(.-)%s*$", "%1"))
 end
 
+---@param str string
+---@param sep string|nil
+---@return string[]
 local function split(str, sep)
     if sep == nil or sep == "" then
         return { str }
     end
 
+    ---@type string[]
     local parts = {}
     local start_index = 1
 
@@ -50,9 +71,12 @@ local function split(str, sep)
     return parts
 end
 
+---@param value any
+---@return string
 local function md5(value)
     local message = tostring(value)
     local original_length = #message
+    ---@type integer[]
     local bytes = { string.byte(message, 1, original_length) }
 
     bytes[#bytes + 1] = 0x80
@@ -71,6 +95,7 @@ local function md5(value)
     local d0 = 0x10325476
 
     for chunk_start = 1, #bytes, 64 do
+        ---@type table<integer, integer>
         local words = {}
         for i = 0, 15 do
             local index = chunk_start + (i * 4)
@@ -116,6 +141,8 @@ local function md5(value)
         d0 = (d0 + d) & 0xffffffff
     end
 
+    ---@param word integer
+    ---@return string
     local function to_hex_le(word)
         return string.format(
             "%02x%02x%02x%02x",
@@ -129,6 +156,7 @@ local function md5(value)
     return to_hex_le(a0) .. to_hex_le(b0) .. to_hex_le(c0) .. to_hex_le(d0)
 end
 
+---@return predicates
 function predicates:get()
     if not self.instance then
         self.instance = self:new()
@@ -136,9 +164,12 @@ function predicates:get()
     return self.instance
 end
 
+---@return predicates
 function predicates:new()
+    ---@type predicates
     local instance = setmetatable({}, predicates.metatable)
 
+    ---@type { [string]: predicate_function }
     instance.compiledFunctions = {
     }
 
@@ -149,6 +180,8 @@ function predicates:new()
     return instance
 end
 
+---@param args_count integer
+---@return string
 function predicates:get_locals_unrolled(args_count)
     local localStr = "local "
 
@@ -166,6 +199,8 @@ function predicates:get_locals_unrolled(args_count)
     return localStr
 end
 
+---@param args_names string[]
+---@return string
 function predicates:get_locals_named(args_names)
     local args_count = #args_names
     local localStr = "local "
@@ -192,11 +227,14 @@ function predicates:get_locals_named(args_names)
     return localStr
 end
 
+---@param predicate string
+---@return boolean, string?, string[]?
 function predicates:is_named_parameters(predicate)
     local arrowPos = predicate:find("=>")
     if not arrowPos then return false end
 
     local args = self:trim(predicate:sub(1, arrowPos - 1))
+    ---@type string[]
     local args_names = self:split(args, ",")
     if not args_names then return false end
 
@@ -205,13 +243,17 @@ function predicates:is_named_parameters(predicate)
     return true, pred_real, args_names
 end
 
+---@param predicate string
 ---@return function|nil
 function predicates:get_query_function(predicate)
     local is_named, pred, args_names = self:is_named_parameters(predicate)
+    ---@type string
     local localsString = nil
     local args_count = 1
 
     if is_named then
+        ---@cast pred string
+        ---@cast args_names string[]
         predicate = pred
         args_count = #args_names
         localsString = self:get_locals_named(args_names)
@@ -236,6 +278,8 @@ function predicates:get_query_function(predicate)
     return self.compiledFunctions[hash]
 end
 
+---@param pred string|predicate_function
+---@return predicate_function|false
 function predicates:get_predicate_function(pred)
     ---@type function|nil|boolean
     local func = false
@@ -246,10 +290,16 @@ function predicates:get_predicate_function(pred)
     else
         return false
     end
+    if func == nil then
+        return false
+    end
     return func
 end
 
+---@param data any[]
+---@param predicate string|predicate_function
 function predicates:sorting_function(data, predicate)
+    ---@type table<any, any>
     local sortingCache = {}
     local func = self:get_predicate_function(predicate)
     if not func then
@@ -261,14 +311,21 @@ function predicates:sorting_function(data, predicate)
     table.sort(data, function(a, b) return sortingCache[a] < sortingCache[b] end)
 end
 
+---@param val any
+---@return string
 function predicates:hash_value(val)
     return md5(val)
 end
 
+---@param str string
+---@param sep string|nil
+---@return string[]
 function predicates:split(str, sep)
     return split(str, sep)
 end
 
+---@param str string
+---@return string
 function predicates:trim(str)
     return trim(str)
 end
