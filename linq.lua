@@ -578,7 +578,7 @@ function enumerable_impl:distinct(...)
             makeArgDescriptor(comparer_or_keySelector, argc),
             makeArgDescriptor(comparer)
         })
-        :Case({
+        :case({
                 { argc = 0,    type = "nil" },
                 { type = "nil" }
             },
@@ -608,7 +608,7 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 1,    type = "table", ext_type = "equality_comparer" },
                 { type = "nil" }
             },
@@ -652,7 +652,7 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
             { argc = 1,    type = "function" },
             { type = "nil" }
         }, function(_)
@@ -684,7 +684,7 @@ function enumerable_impl:distinct(...)
                 end
             }, makeEnumerableMeta())
         end)
-        :Case({
+        :case({
                 { argc = 2,       type = "function" },
                 { type = "table", ext_type = "equality_comparer" }
             },
@@ -730,7 +730,7 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 1,    type = "string" },
                 { type = "nil" }
             },
@@ -773,7 +773,7 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 2,       type = "string" },
                 { type = "table", ext_type = "equality_comparer" }
             },
@@ -827,12 +827,12 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Default(function(x)
+        :default(function(x)
             error("no signature enumerable<T>:distinct(" ..
                 (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
                 (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
         end)
-        :Result()
+        :result()
 end
 
 ---@generic T, K, V
@@ -879,7 +879,7 @@ function enumerable_impl:where(...)
             makeArgDescriptor(value_or_comparer),
             makeArgDescriptor(equality_comparer)
         })
-        :Case({
+        :case({
                 { argc = 1,    type = "function" },
                 { type = "nil" },
                 { type = "nil" }
@@ -894,7 +894,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 1,    type = "string" },
                 { type = "nil" },
                 { type = "nil" }
@@ -916,7 +916,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 1,    type = "table" },
                 { type = "nil" },
                 { type = "nil" }
@@ -932,7 +932,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 2,       type = "table" },
                 { type = "table", ext_type = "equality_comparer" },
                 { type = "nil" }
@@ -947,7 +947,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 3,       type = "function" },
                 {},
                 { type = "table", ext_type = "equality_comparer" }
@@ -962,7 +962,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 2,    type = "function" },
                 {},
                 { type = "nil" }
@@ -977,7 +977,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 2,    type = "string" },
                 {},
                 { type = "nil" }
@@ -999,7 +999,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 3,       type = "string" },
                 {},
                 { type = "table", ext_type = "equality_comparer" }
@@ -1021,7 +1021,7 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :Default(function(x)
+        :default(function(x)
             error("no signature enumerable<T>:where(" ..
                 (x[1].type or "nil") ..
                 ", " ..
@@ -1029,7 +1029,7 @@ function enumerable_impl:where(...)
                 ": " ..
                 (x[2].ext_type or "nil") .. ", " .. (x[3].type or "nil") .. ": " .. (x[3].ext_type or "nil") .. ")")
         end)
-        :Result()
+        :result()
 end
 
 ---@generic T, U
@@ -1042,7 +1042,7 @@ function enumerable_impl:select(...)
     return map({
             makeArgDescriptor(selector, argc)
         })
-        :Case({
+        :case({
                 { argc = 1, type = "function" }
             },
             ---@generic T, U
@@ -1061,7 +1061,7 @@ function enumerable_impl:select(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Case({
+        :case({
                 { argc = 1, type = "string" }
             },
             ---@generic T
@@ -1087,11 +1087,11 @@ function enumerable_impl:select(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :Default(function(x)
+        :default(function(x)
             error("no signature enumerable<T>:select(" ..
                 (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ")")
         end)
-        :Result()
+        :result()
 end
 
 ---@generic T, U
@@ -1109,7 +1109,7 @@ function enumerable_impl:collect(...)
             makeArgDescriptor(consumer),
             makeArgDescriptor(finalizer)
         })
-        :Case({
+        :case({
                 { argc = 1,    type = "function" },
                 { type = "nil" },
                 { type = "nil" }
@@ -1119,7 +1119,7 @@ function enumerable_impl:collect(...)
             function(_)
                 return consumer_or_constructor(self:iter())
             end)
-        :Case({
+        :case({
                 { argc = 2,         type = "function" },
                 { type = "function" },
                 { type = "nil" }
@@ -1133,7 +1133,7 @@ function enumerable_impl:collect(...)
                 end
                 return acc
             end)
-        :Case({
+        :case({
                 { argc = 3,         type = "function" },
                 { type = "function" },
                 { type = "function" }
@@ -1147,13 +1147,13 @@ function enumerable_impl:collect(...)
                 end
                 return finalizer(acc)
             end)
-        :Default(function(x)
+        :default(function(x)
             error("no signature enumerable<T>:collect(" ..
                 (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
                 (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ", " ..
                 (x[3].type or "nil") .. ": " .. (x[3].ext_type or "nil") .. ")")
         end)
-        :Result()
+        :result()
 end
 
 ---@generic T, K, V

@@ -8,10 +8,7 @@
 ---@field funcArgs string|nil
 ---@field footer string|nil
 local predicates = {}
----@type predicates
-predicates.metatable = {
-    __index = predicates,
-}
+
 setmetatable(predicates, { __call = function(self) return self:get() end })
 
 if loadstring == nil then
@@ -167,7 +164,7 @@ end
 ---@return predicates
 function predicates:new()
     ---@type predicates
-    local instance = setmetatable({}, predicates.metatable)
+    local instance = setmetatable({}, { __index = self })
 
     ---@type { [string]: predicate_function }
     instance.compiledFunctions = {
