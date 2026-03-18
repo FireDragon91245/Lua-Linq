@@ -2,7 +2,7 @@ local predicates = {}
 predicates.metatable = {
     __index = predicates,
 }
-setmetatable(predicates, { __call = function(self, ...) return self:Get(...) end })
+setmetatable(predicates, { __call = function(self) return self:get() end })
 
 if loadstring == nil then
     loadstring = load
@@ -149,30 +149,29 @@ function predicates:new()
     return instance
 end
 
-function predicates:GetLocalsUnrolled(...)
-    local argsCnt = select("#", ...)
+function predicates:get_locals_unrolled(args_count)
     local localStr = "local "
 
-    for i = 1, argsCnt do
+    for i = 1, args_count do
         if i ~= 1 then
             localStr = localStr .. ","
         end
         localStr = localStr .. string.char(96 + i)
     end
 
-    for i = 1, argsCnt do
+    for i = 1, args_count do
         localStr = localStr .. "\n" .. string.char(96 + i) .. " = args[" .. i .. "];"
     end
     localStr = localStr .. "\n"
     return localStr
 end
 
-function predicates:GetLocalsNamed(argsNames, ...)
-    local argsCnt = select("#", ...)
+function predicates:get_locals_named(args_names)
+    local args_count = #args_names
     local localStr = "local "
 
-    for i = 1, argsCnt do
-        local name = argsNames[i]
+    for i = 1, args_count do
+        local name = args_names[i]
         if not name then
             name = string.char(96 + i)
         end
@@ -182,8 +181,8 @@ function predicates:GetLocalsNamed(argsNames, ...)
         localStr = localStr .. name
     end
 
-    for i = 1, argsCnt do
-        local name = argsNames[i]
+    for i = 1, args_count do
+        local name = args_names[i]
         if not name then
             name = string.char(96 + i)
         end
@@ -193,31 +192,34 @@ function predicates:GetLocalsNamed(argsNames, ...)
     return localStr
 end
 
-function predicates:IsNamedParameters(predicate, ...)
+function predicates:is_named_parameters(predicate)
     local arrowPos = predicate:find("=>")
     if not arrowPos then return false end
 
-    local args = self:Trim(predicate:sub(1, arrowPos - 1))
-    local argsNames = self:Split(args, ",")
-    if not argsNames then return false end
+    local args = self:trim(predicate:sub(1, arrowPos - 1))
+    local args_names = self:split(args, ",")
+    if not args_names then return false end
 
-    local predReal = self:Trim(predicate:sub(arrowPos + 2, #predicate))
+    local pred_real = self:trim(predicate:sub(arrowPos + 2, #predicate))
 
-    return true, predReal, argsNames
+    return true, pred_real, args_names
 end
 
 ---@return function|nil
-function predicates:GetQueryFunction(predicate, ...)
-    local isNamed, pred, argsNames = self:IsNamedParameters(predicate, ...)
+function predicates:get_query_function(predicate)
+    local is_named, pred, args_names = self:is_named_parameters(predicate)
     local localsString = nil
-    if isNamed then
+    local args_count = 1
+
+    if is_named then
         predicate = pred
-        localsString = self:GetLocalsNamed(argsNames, ...)
+        args_count = #args_names
+        localsString = self:get_locals_named(args_names)
     else
-        localsString = self:GetLocalsUnrolled(...)
+        localsString = self:get_locals_unrolled(args_count)
     end
-    local argsCnt = select("#", ...)
-    local hash = self:HashValue(argsCnt .. "-" .. predicate)
+
+    local hash = self:hash_value(args_count .. "-" .. predicate)
     if not self.compiledFunctions[hash] then
         local hasReturn = predicate:find("return")
         local fullFunc = self.funcHeader .. self.funcArgs .. localsString
@@ -234,40 +236,40 @@ function predicates:GetQueryFunction(predicate, ...)
     return self.compiledFunctions[hash]
 end
 
-function predicates:GetPredicateFunction(pred, ...)
+function predicates:get_predicate_function(pred)
     ---@type function|nil|boolean
     local func = false
     if type(pred) == "function" then
         func = pred
     elseif type(pred) == "string" then
-        func = self:GetQueryFunction(pred, 1, ...)
+        func = self:get_query_function(pred)
     else
         return false
     end
     return func
 end
 
-function predicates:SortingFunction(data, predicate, ...)
+function predicates:sorting_function(data, predicate)
     local sortingCache = {}
-    local func = self:GetPredicateFunction(predicate, ...)
+    local func = self:get_predicate_function(predicate)
     if not func then
         error("Invalid sorting predicate: " .. tostring(predicate))
     end
     for ind, val in ipairs(data) do
-        sortingCache[val] = func(val, ...)
+        sortingCache[val] = func(val)
     end
     table.sort(data, function(a, b) return sortingCache[a] < sortingCache[b] end)
 end
 
-function predicates:HashValue(val)
+function predicates:hash_value(val)
     return md5(val)
 end
 
-function predicates:Split(str, sep)
+function predicates:split(str, sep)
     return split(str, sep)
 end
 
-function predicates:Trim(str)
+function predicates:trim(str)
     return trim(str)
 end
 

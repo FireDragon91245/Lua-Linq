@@ -118,7 +118,7 @@ function mapClass.Case(self, condition, func)
     end
 
     if type(func) == "string" then
-        func = predicateParser():GetPredicateFunction(func)
+        func = predicateParser():get_predicate_function(func)
     else
         if type(func) ~= "function" then
             error("Cannot callback on type" .. type(func) .. "for Map Case")
@@ -142,7 +142,7 @@ function mapClass.Case(self, condition, func)
         end
     elseif type(condition) == "string" then
         if string.find(condition, "=>") then
-            local ff = predicateParser():GetPredicateFunction(condition)
+            local ff = predicateParser():get_predicate_function(condition)
             if ff(self.data) then
                 ExecuteConsumer(self, func)
                 self.match = true
@@ -161,7 +161,7 @@ end
 function mapClass.Default(self, func)
     if not self.match then
         if type(func) == "string" then
-            func = predicateParser():GetPredicateFunction(func)
+            func = predicateParser():get_predicate_function(func)
         else
             if type(func) ~= "function" then
                 error("Cannot callback on type" .. type(func) .. "for Map Case")

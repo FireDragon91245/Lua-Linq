@@ -78,6 +78,26 @@ local function normalizeDistinctKey(value)
     return value
 end
 
+---@param expression string
+---@param kind string
+---@return function
+local function compileEnumerableStringExpression(expression, kind)
+    local compiled = predicate_parser:get_predicate_function(expression)
+    if not compiled then
+        error("Invalid " .. kind .. " string: " .. expression)
+    end
+
+    return compiled
+end
+
+---@param property string
+---@return function
+local function makeValuePropertySelector(property)
+    return function(...)
+        return select(-1, ...)[property]
+    end
+end
+
 local function validateList(list)
     if getmetatable(list) == nil or getmetatable(list).__type ~= "list" then
         error("Expected list, got " .. type(list))
@@ -720,14 +740,9 @@ function enumerable_impl:distinct(...)
                 local is_predicate = string.find(comparer_or_keySelector --[[@as string]], "=>") ~= nil
                 local predicate
                 if is_predicate then
-                    predicate = predicate_parser:GetPredicateFunction(comparer_or_keySelector)
-                    if not predicate then
-                        error("Invalid predicate string: " .. comparer_or_keySelector)
-                    end
+                    predicate = compileEnumerableStringExpression(comparer_or_keySelector, "predicate")
                 else
-                    predicate = function(...)
-                        return select(-1, ...)[comparer_or_keySelector]
-                    end
+                    predicate = makeValuePropertySelector(comparer_or_keySelector)
                 end
                 return setmetatable({
                     __src = self,
@@ -768,14 +783,9 @@ function enumerable_impl:distinct(...)
                 local is_predicate = string.find(comparer_or_keySelector --[[@as string]], "=>") ~= nil
                 local predicate
                 if is_predicate then
-                    predicate = predicate_parser:GetPredicateFunction(comparer_or_keySelector)
-                    if not predicate then
-                        error("Invalid predicate string: " .. comparer_or_keySelector)
-                    end
+                    predicate = compileEnumerableStringExpression(comparer_or_keySelector, "predicate")
                 else
-                    predicate = function(...)
-                        return select(-1, ...)[comparer_or_keySelector]
-                    end
+                    predicate = makeValuePropertySelector(comparer_or_keySelector)
                 end
                 return setmetatable({
                     __src = self,
@@ -895,14 +905,9 @@ function enumerable_impl:where(...)
                 local is_predicate = string.find(predicate_or_selector --[[@as string]], "=>") ~= nil
                 local predicate
                 if is_predicate then
-                    predicate = predicate_parser:GetPredicateFunction(predicate_or_selector)
-                    if not predicate then
-                        error("Invalid predicate string: " .. predicate_or_selector)
-                    end
+                    predicate = compileEnumerableStringExpression(predicate_or_selector, "predicate")
                 else
-                    predicate = function(item)
-                        return item[predicate_or_selector]
-                    end
+                    predicate = makeValuePropertySelector(predicate_or_selector)
                 end
                 return setmetatable({
                     __src = self,
@@ -923,7 +928,7 @@ function enumerable_impl:where(...)
                 return setmetatable({
                     __src = self,
                     __next = make_next_func(function (value)
-                        return not comparer:compare((table.unpack(value)), predicate_or_selector)
+                        return not comparer:compare(value[#value], predicate_or_selector)
                     end)
                 }, makeEnumerableMeta())
             end)
@@ -938,7 +943,7 @@ function enumerable_impl:where(...)
                 return setmetatable({
                     __src = self,
                     __next = make_next_func(function (value)
-                        return not value_or_comparer:compare((table.unpack(value)), predicate_or_selector)
+                        return not value_or_comparer:compare(value[#value], predicate_or_selector)
                     end)
                 }, makeEnumerableMeta())
             end)
@@ -983,14 +988,9 @@ function enumerable_impl:where(...)
                 local is_predicate = string.find(predicate_or_selector --[[@as string]], "=>") ~= nil
                 local predicate
                 if is_predicate then
-                    predicate = predicate_parser:GetPredicateFunction(predicate_or_selector)
-                    if not predicate then
-                        error("Invalid predicate string: " .. predicate_or_selector)
-                    end
+                    predicate = compileEnumerableStringExpression(predicate_or_selector, "predicate")
                 else
-                    predicate = function(item)
-                        return item[predicate_or_selector]
-                    end
+                    predicate = makeValuePropertySelector(predicate_or_selector)
                 end
                 return setmetatable({
                     __src = self,
@@ -1010,14 +1010,9 @@ function enumerable_impl:where(...)
                 local is_predicate = string.find(predicate_or_selector --[[@as string]], "=>") ~= nil
                 local predicate
                 if is_predicate then
-                    predicate = predicate_parser:GetPredicateFunction(predicate_or_selector)
-                    if not predicate then
-                        error("Invalid predicate string: " .. predicate_or_selector)
-                    end
+                    predicate = compileEnumerableStringExpression(predicate_or_selector, "predicate")
                 else
-                    predicate = function(item)
-                        return item[predicate_or_selector]
-                    end
+                    predicate = makeValuePropertySelector(predicate_or_selector)
                 end
                 return setmetatable({
                     __src = self,
@@ -1058,11 +1053,11 @@ function enumerable_impl:select(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
-                        return selector(value)
+                        return selector(table.unpack(value))
                     end
                 }, makeEnumerableMeta())
             end)
@@ -1075,25 +1070,20 @@ function enumerable_impl:select(...)
                 local is_predicate = string.find(selector --[[@as string]], "=>") ~= nil
                 local selector_func
                 if is_predicate then
-                    selector_func = predicate_parser:GetPredicateFunction(selector)
-                    if not selector_func then
-                        error("Invalid selector string: " .. selector)
-                    end
+                    selector_func = compileEnumerableStringExpression(selector, "selector")
                 else
-                    selector_func = function(item)
-                        return item[selector]
-                    end
+                    selector_func = makeValuePropertySelector(selector)
                 end
                 return setmetatable({
                     __src = self,
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value = enumerable.__src.__next(iter, enumerable.__src)
-                        if value == nil then
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
+                        if #value == 0 then
                             return nil
                         end
-                        return selector_func(value)
+                        return selector_func(table.unpack(value))
                     end
                 }, makeEnumerableMeta())
             end)
@@ -1377,6 +1367,45 @@ function dict_impl:enumerate()
             return next_key, next_value
         end
     }, makeEnumerableMeta())
+end
+
+---@generic K, V
+---@param self dict<K, V>
+---@return iter<K, V>
+function dict_impl:iter()
+    validateDict(self)
+
+    return self:enumerate():iter()
+end
+
+---@generic K, V
+---@overload fun(self: dict<K, V>): enumerable<K, V>
+---@overload fun(self: dict<K, V>, comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: dict<K, V>, keySelector: fun(item: K, value: V): (any)): enumerable<K, V>
+---@overload fun(self: dict<K, V>, keySelector: fun(item: K, value: V): (any), comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: dict<K, V>, keySelector: string): enumerable<K, V>
+---@overload fun(self: dict<K, V>, keySelector: string, comparer: equality_comparer): enumerable<K, V>
+function dict_impl:distinct(...)
+    validateDict(self)
+
+    return self:enumerate():distinct(...)
+end
+
+---@generic K, V
+---@overload fun(self: enumerable<K, V>, predicate: fun(key: K, value: V): (boolean)): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, predicate: string): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, predicate: table): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, predicate: table, equality_comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), value: any, equality_comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), value: any): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: string): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: string, value: any): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: string, value: any, equality_comparer: equality_comparer): enumerable<K, V>
+function dict_impl:where(...)
+    validateDict(self)
+
+    return self:enumerate():where(...)
 end
 
 ---@generic T
