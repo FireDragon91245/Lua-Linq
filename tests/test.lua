@@ -6,7 +6,11 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 require('tests.test_comparers')
 require('tests.list.test_distinct')
 require('tests.list.test_where')
+require('tests.list.test_select')
+require('tests.list.test_collect')
 require('tests.dict.test_distinct')
 require('tests.dict.test_where')
+require('tests.dict.test_select')
+require('tests.dict.test_collect')
 
 print(luaunit.LuaUnit.run())

@@ -1032,9 +1032,12 @@ function enumerable_impl:where(...)
         :result()
 end
 
----@generic T, U
----@overload fun(self: enumerable<T>, selector: fun(item: T): (U)): enumerable<U>
----@overload fun(self: enumerable<T>, selector: string): enumerable<any>
+---@generic TI, TO, KI, KO, VI, VO
+---@overload fun(self: enumerable<TI>, selector: fun(item: TI): (TO)): enumerable<TO>
+---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (TO)): enumerable<TO>
+---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (KO, VO)): enumerable<KO, VO>
+---@overload fun(self: enumerable<TI>, selector: string): enumerable<any>
+---@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any, any>
 function enumerable_impl:select(...)
     local argc = select("#", ...)
     local selector = select(1, ...)
@@ -1094,10 +1097,13 @@ function enumerable_impl:select(...)
         :result()
 end
 
----@generic T, U
----@overload fun(self: enumerable<T>, consumer: fun(enum: iter<T>): (U)): U
----@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T)): U
----@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T), finalizer: fun(acc: U): (U)): U
+---@generic TI, TO, TFO, KI, VI
+---@overload fun(self: enumerable<TI>, consumer: fun(enum: iter<TI>): (TO)): TO
+---@overload fun(self: enumerable<KI, VI>, consumer: fun(enum: iter<KI, VI>): (TO)): TO
+---@overload fun(self: enumerable<TI>, constructor: fun(): (TO), consumer: fun(acc: TO, item: TI)): TO
+---@overload fun(self: enumerable<KI, VI>, constructor: fun(): (TO), consumer: fun(acc: TO, key: KI, value: VI)): TO
+---@overload fun(self: enumerable<TI>, constructor: fun(): (TO), consumer: fun(acc: TO, item: TI), finalizer: fun(acc: TO): (TFO)): TFO
+---@overload fun(self: enumerable<KI, VI>, constructor: fun(): (TO), consumer: fun(acc: TO, key: KI, value: VI), finalizer: fun(acc: TO): (TFO)): TFO
 function enumerable_impl:collect(...)
     local argc = select("#", ...)
     local consumer_or_constructor = select(1, ...)
@@ -1128,8 +1134,11 @@ function enumerable_impl:collect(...)
             ---@type fun(self: enumerable<T>, constructor: fun(): U, consumer: fun(acc: U, item: T)): U
             function(_)
                 local acc = consumer_or_constructor()
-                for item in self:iter() do
-                    consumer(acc, item)
+                local iter = self:iter()
+                local item = { iter() }
+                while #item ~= 0 do
+                    consumer(acc, table.unpack(item))
+                    item = { iter() }
                 end
                 return acc
             end)
@@ -1142,8 +1151,11 @@ function enumerable_impl:collect(...)
             ---@type fun(self: enumerable<T>, constructor: fun(): U, consumer: fun(acc: U, item: T), finalizer: fun(acc: U): U): U
             function(_)
                 local acc = consumer_or_constructor()
-                for item in self:iter() do
-                    consumer(acc, item)
+                local iter = self:iter()
+                local item = { iter() }
+                while #item ~= 0 do
+                    consumer(acc, table.unpack(item))
+                    item = { iter() }
                 end
                 return finalizer(acc)
             end)
@@ -1237,10 +1249,10 @@ function list_impl:select(...)
     return self:enumerate():select(...)
 end
 
----@generic T, U
----@overload fun(self: enumerable<T>, consumer: fun(enum: iter<T>): (U)): U
----@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T)): U
----@overload fun(self: enumerable<T>, constructor: fun(): (U), consumer: fun(acc: U, item: T), finalizer: fun(acc: U): (U)): U
+---@generic T, TO, TFO
+---@overload fun(self: enumerable<T>, consumer: fun(enum: iter<T>): (TO)): TO
+---@overload fun(self: enumerable<T>, constructor: fun(): (TO), consumer: fun(acc: TO, item: T)): TO
+---@overload fun(self: enumerable<T>, constructor: fun(): (TO), consumer: fun(acc: TO, item: T), finalizer: fun(acc: TO): (TFO)): TFO
 function list_impl:collect(...)
     validateList(self)
 
@@ -1406,6 +1418,26 @@ function dict_impl:where(...)
     validateDict(self)
 
     return self:enumerate():where(...)
+end
+
+---@generic KI, VI, KO, VO
+---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (VO)): enumerable<VO>
+---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (KO, VO)): enumerable<KO, VO>
+---@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any, any>
+function dict_impl:select(...)
+    validateDict(self)
+
+    return self:enumerate():select(...)
+end
+
+---@generic TO, TFO, KI, VI
+---@overload fun(self: enumerable<KI, VI>, consumer: fun(enum: iter<KI, VI>): (TO)): TO
+---@overload fun(self: enumerable<KI, VI>, constructor: fun(): (TO), consumer: fun(acc: TO, key: KI, value: VI)): TO
+---@overload fun(self: enumerable<KI, VI>, constructor: fun(): (TO), consumer: fun(acc: TO, key: KI, value: VI), finalizer: fun(acc: TO): (TFO)): TFO
+function dict_impl:collect(...)
+    validateDict(self)
+
+    return self:enumerate():collect(...)
 end
 
 ---@generic T
