@@ -792,7 +792,7 @@ function enumerable_impl:distinct(...)
                     __next = function(iter, enumerable)
                         validateIter(iter)
 
-                        local value =  { enumerable.__src.__next(iter, enumerable.__src) }
+                        local value = { enumerable.__src.__next(iter, enumerable.__src) }
                         if #value == 0 then
                             return nil
                         end
@@ -862,8 +862,8 @@ function enumerable_impl:where(...)
     local value_or_comparer = select(2, ...)
     local equality_comparer = select(3, ...)
 
-    local make_next_func = function (condition)
-        return function (iter, enumerable)
+    local make_next_func = function(condition)
+        return function(iter, enumerable)
             validateIter(iter)
 
             local value = { enumerable.__src.__next(iter, enumerable.__src) }
@@ -885,11 +885,11 @@ function enumerable_impl:where(...)
                 { type = "nil" }
             },
             ---@generic T
-            ---@type fun(self: enumerable<T>, predicate: fun(item: T): boolean): enumerable<T>|fun(self: enumerable<T>, selector: fun(item: T): any): enumerable<T>
+            ---@type fun(self: enumerable<T>, predicate: fun(item: T): (boolean)): enumerable<T>|fun(self: enumerable<T>, selector: fun(item: T): any): enumerable<T>
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not predicate_or_selector(table.unpack(value))
                     end)
                 }, makeEnumerableMeta())
@@ -911,7 +911,7 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not predicate(table.unpack(value))
                     end)
                 }, makeEnumerableMeta())
@@ -927,7 +927,7 @@ function enumerable_impl:where(...)
                 local comparer = linq.TABLE_SUPERSET
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not comparer:compare(value[#value], predicate_or_selector)
                     end)
                 }, makeEnumerableMeta())
@@ -942,7 +942,7 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not value_or_comparer:compare(value[#value], predicate_or_selector)
                     end)
                 }, makeEnumerableMeta())
@@ -957,8 +957,9 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
-                        return not equality_comparer:compare(predicate_or_selector(table.unpack(value)), value_or_comparer)
+                    __next = make_next_func(function(value)
+                        return not equality_comparer:compare(predicate_or_selector(table.unpack(value)),
+                            value_or_comparer)
                     end)
                 }, makeEnumerableMeta())
             end)
@@ -972,7 +973,7 @@ function enumerable_impl:where(...)
             function(_)
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not (predicate_or_selector(table.unpack(value)) == value_or_comparer)
                     end)
                 }, makeEnumerableMeta())
@@ -994,7 +995,7 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not (predicate(table.unpack(value)) == value_or_comparer)
                     end)
                 }, makeEnumerableMeta())
@@ -1016,7 +1017,7 @@ function enumerable_impl:where(...)
                 end
                 return setmetatable({
                     __src = self,
-                    __next = make_next_func(function (value)
+                    __next = make_next_func(function(value)
                         return not equality_comparer:compare(predicate(table.unpack(value)), value_or_comparer)
                     end)
                 }, makeEnumerableMeta())
@@ -1036,8 +1037,8 @@ end
 ---@overload fun(self: enumerable<TI>, selector: fun(item: TI): (TO)): enumerable<TO>
 ---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (TO)): enumerable<TO>
 ---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (KO, VO)): enumerable<KO, VO>
----@overload fun(self: enumerable<TI>, selector: string): enumerable<any>
----@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any, any>
+---@overload fun(self: enumerable<TI>, selector: string): enumerable<any>|enumerable<any, any>
+---@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any>|enumerable<any, any>
 function enumerable_impl:select(...)
     local argc = select("#", ...)
     local selector = select(1, ...)
@@ -1068,7 +1069,7 @@ function enumerable_impl:select(...)
                 { argc = 1, type = "string" }
             },
             ---@generic T
-            ---@type fun(self: enumerable<T>, selector: string): enumerable<any>
+            ---@type fun(self: enumerable<T>, selector: string): enumerable<any>|enumerable<any, any>
             function(_)
                 local is_predicate = string.find(selector --[[@as string]], "=>") ~= nil
                 local selector_func
@@ -1169,6 +1170,279 @@ function enumerable_impl:collect(...)
 end
 
 ---@generic T, K, V
+---@overload fun(self: enumerable<T>): boolean
+---@overload fun(self: enumerable<K, V>): boolean
+---@overload fun(self: enumerable<T>, predicate: fun(item: T): (boolean)): boolean
+---@overload fun(self: enumerable<K, V>, predicate: fun(key: K, value: V): (boolean)): boolean
+---@overload fun(self: enumerable<T>, predicate: string): boolean
+---@overload fun(self: enumerable<K, V>, predicate: string): boolean
+function enumerable_impl:any(...)
+    local argc = select("#", ...)
+    local predicate = select(1, ...)
+
+    return map({
+            makeArgDescriptor(predicate, argc)
+        })
+        :case({
+                { argc = 0, type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): boolean
+            function(_)
+                for _ in self:iter() do
+                    return true
+                end
+                return false
+            end)
+        :case({
+                { argc = 1, type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: fun(item: T): (boolean)): boolean
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                while #value ~= 0 do
+                    if predicate(table.unpack(value)) then
+                        return true
+                    end
+                    value = { iter() }
+                end
+                return false
+            end)
+        :case({
+                { argc = 1, type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, predicate: string): boolean
+            function(_)
+                local is_predicate = string.find(predicate --[[@as string]], "=>") ~= nil
+                local predicate_func
+                if is_predicate then
+                    predicate_func = compileEnumerableStringExpression(predicate, "predicate")
+                else
+                    predicate_func = makeValuePropertySelector(predicate)
+                end
+
+                local iter = self:iter()
+                local value = { iter() }
+                while #value ~= 0 do
+                    if predicate_func(table.unpack(value)) then
+                        return true
+                    end
+                    value = { iter() }
+                end
+                return false
+            end)
+        :default(function(x)
+            error("no signature enumerable<T>:any(" ..
+                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ")")
+        end)
+        :result()
+end
+
+---@generic T, K, V
+---@overload fun(self: enumerable<T>): T
+---@overload fun(self: enumerable<K, V>): V
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): any
+---@overload fun(self: enumerable<T>, selector: string): any
+---@overload fun(self: enumerable<K, V>, selector: string): any
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<T>, selector: string, is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), is_bigger: string): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_bigger: string): any
+---@overload fun(self: enumerable<T>, selector: string, is_bigger: string): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_bigger: string): any
+function enumerable_impl:max(...)
+    local argc = select("#", ...)
+    local selector_or_is_bigger = select(1, ...)
+    local is_bigger = select(2, ...)
+
+    return map({
+            makeArgDescriptor(selector_or_is_bigger, argc),
+            makeArgDescriptor(is_bigger)
+        })
+        :case({
+                { argc = 0,    type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): T
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    if (max_value == nil) or (value[#value] > max_value) then
+                        max_value = value[#value]
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 1,    type = "function" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any): any
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_bigger(table.unpack(value))
+                    if (max_value == nil) or (projected_value > max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 1,    type = "string" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string): any
+            function(_)
+                local is_predicate = string.find(selector_or_is_bigger --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_bigger, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_bigger)
+                end
+
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (max_value == nil) or (projected_value > max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 2,         type = "function" },
+                { type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, is_bigger: fun(a: any, b: any): (boolean)): any
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_bigger(table.unpack(value))
+                    if (max_value == nil) or is_bigger(projected_value, max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 2,         type = "string" },
+                { type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string, is_bigger: fun(a: any, b: any): (boolean)): any
+            function(_)
+                local is_predicate = string.find(selector_or_is_bigger --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_bigger, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_bigger)
+                end
+
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (max_value == nil) or is_bigger(projected_value, max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 2,       type = "function" },
+                { type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, is_bigger: string): any
+            function(_)
+                local is_predicate = string.find(is_bigger --[[@as string]], "=>") ~= nil
+                if not is_predicate then
+                    error("Expected a function for is_bigger parameter, got string without lambda expression: " ..
+                        is_bigger)
+                end
+                local is_bigger_func = compileEnumerableStringExpression(is_bigger, "is_bigger")
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_bigger(table.unpack(value))
+                    if (max_value == nil) or is_bigger_func(projected_value, max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :case({
+                { argc = 2,       type = "string" },
+                { type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string, is_bigger: string): any
+            function(_)
+                local is_selector_predicate = string.find(selector_or_is_bigger --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_selector_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_bigger, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_bigger)
+                end
+
+                local is_bigger_predicate = string.find(is_bigger --[[@as string]], "=>") ~= nil
+                if not is_bigger_predicate then
+                    error("Expected a function for is_bigger parameter, got string without lambda expression: " ..
+                        is_bigger)
+                end
+                local is_bigger_func = compileEnumerableStringExpression(is_bigger, "is_bigger")
+
+                local iter = self:iter()
+                local value = { iter() }
+                local max_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (max_value == nil) or is_bigger_func(projected_value, max_value) then
+                        max_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return max_value
+            end)
+        :default(function(x)
+            error("no signature enumerable<T>:max(" ..
+                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
+                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
+        end)
+        :result()
+end
+
+---@generic T, K, V
 ---@overload fun(self: enumerable<T>): iter<T>
 ---@overload fun(self: enumerable<K, V>): iter<K, V>
 function enumerable_impl:iter()
@@ -1242,7 +1516,7 @@ end
 
 ---@generic T, U
 ---@overload fun(self: list<T>, selector: fun(item: T): (U)): enumerable<U>
----@overload fun(self: list<T>, selector: string): enumerable<any>
+---@overload fun(self: list<T>, selector: string): enumerable<any>|enumerable<any, any>
 function list_impl:select(...)
     validateList(self)
 
@@ -1257,6 +1531,30 @@ function list_impl:collect(...)
     validateList(self)
 
     return self:enumerate():collect(...)
+end
+
+---@generic T
+---@overload fun(self: list<T>): boolean
+---@overload fun(self: list<T>, predicate: fun(item: T): (boolean)): boolean
+---@overload fun(self: list<T>, predicate: string): boolean
+function list_impl:any(...)
+    validateList(self)
+
+    return self:enumerate():any(...)
+end
+
+---@generic T
+---@overload fun(self: list<T>): T
+---@overload fun(self: list<T>, selector: fun(item: T): (any)): any
+---@overload fun(self: list<T>, selector: string): any
+---@overload fun(self: list<T>, selector: fun(item: T): (any), is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: list<T>, selector: string, is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: list<T>, selector: fun(item: T): (any), is_bigger: string): any
+---@overload fun(self: list<T>, selector: string, is_bigger: string): any
+function list_impl:max(...)
+    validateList(self)
+
+    return self:enumerate():max(...)
 end
 
 ---@generic T
@@ -1423,7 +1721,7 @@ end
 ---@generic KI, VI, KO, VO
 ---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (VO)): enumerable<VO>
 ---@overload fun(self: enumerable<KI, VI>, selector: fun(key: KI, value: VI): (KO, VO)): enumerable<KO, VO>
----@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any, any>
+---@overload fun(self: enumerable<KI, VI>, selector: string): enumerable<any>|enumerable<any, any>
 function dict_impl:select(...)
     validateDict(self)
 
@@ -1438,6 +1736,30 @@ function dict_impl:collect(...)
     validateDict(self)
 
     return self:enumerate():collect(...)
+end
+
+---@generic K, V
+---@overload fun(self: enumerable<K, V>): boolean
+---@overload fun(self: enumerable<K, V>, predicate: fun(key: K, value: V): (boolean)): boolean
+---@overload fun(self: enumerable<K, V>, predicate: string): boolean
+function dict_impl:any(...)
+    validateDict(self)
+
+    return self:enumerate():any(...)
+end
+
+---@generic K, V
+---@overload fun(self: enumerable<K, V>): V
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): any
+---@overload fun(self: enumerable<K, V>, selector: string): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_bigger: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_bigger: string): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_bigger: string): any
+function dict_impl:max(...)
+    validateDict(self)
+
+    return self:enumerate():max(...)
 end
 
 ---@generic T

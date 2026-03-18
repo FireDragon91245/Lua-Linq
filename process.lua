@@ -8,20 +8,17 @@ local oit = enum:iter()
 ---@return table<string, number>
 local function table()
     return {
-        ["a"] = 1,
-        ["b"] = 2,
-        [1] = 3,
-        ["c"] = 2
+        ["max"] = { age = 30 },
+        ["tom"] = { age = 25 },
+        ["isa"] = { age = 28 },
+        ["lisa"] = { age = 22 }
     }
 end
 
 local t = table()
 
 local dict = linq.dict(t)
-local enum2 = dict:enumerate():distinct()
-local it = enum2:iter()
+local enum2 = dict:enumerate():select("k, v => v, k")
 
-for k, v in it do
-    print(k, v)
-end
+print(enum2:max("v, k => v.age"))
 
