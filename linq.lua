@@ -1443,6 +1443,207 @@ function enumerable_impl:max(...)
 end
 
 ---@generic T, K, V
+---@overload fun(self: enumerable<T>): T
+---@overload fun(self: enumerable<K, V>): V
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): any
+---@overload fun(self: enumerable<T>, selector: string): any
+---@overload fun(self: enumerable<K, V>, selector: string): any
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<T>, selector: string, is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), is_smaller: string): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_smaller: string): any
+---@overload fun(self: enumerable<T>, selector: string, is_smaller: string): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_smaller: string): any
+function enumerable_impl:min(...)
+    local argc = select("#", ...)
+    local selector_or_is_smaller = select(1, ...)
+    local is_smaller = select(2, ...)
+
+    return map({
+            makeArgDescriptor(selector_or_is_smaller, argc),
+            makeArgDescriptor(is_smaller)
+        })
+        :case({
+                { argc = 0,    type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): T
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    if (min_value == nil) or (value[#value] < min_value) then
+                        min_value = value[#value]
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 1,    type = "function" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any): any
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_smaller(table.unpack(value))
+                    if (min_value == nil) or (projected_value < min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 1,    type = "string" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string): any
+            function(_)
+                local is_predicate = string.find(selector_or_is_smaller --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_smaller, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_smaller)
+                end
+
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (min_value == nil) or (projected_value < min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 2,         type = "function" },
+                { type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, is_smaller: fun(a: any, b: any): (boolean)): any
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_smaller(table.unpack(value))
+                    if (min_value == nil) or is_smaller(projected_value, min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 2,         type = "string" },
+                { type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string, is_smaller: fun(a: any, b: any): (boolean)): any
+            function(_)
+                local is_predicate = string.find(selector_or_is_smaller --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_smaller, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_smaller)
+                end
+
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (min_value == nil) or is_smaller(projected_value, min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 2,       type = "function" },
+                { type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): any, is_smaller: string): any
+            function(_)
+                local is_predicate = string.find(is_smaller --[[@as string]], "=>") ~= nil
+                if not is_predicate then
+                    error("Expected a function for is_smaller parameter, got string without lambda expression: " ..
+                        is_smaller)
+                end
+                local is_smaller_func = compileEnumerableStringExpression(is_smaller, "is_smaller")
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_or_is_smaller(table.unpack(value))
+                    if (min_value == nil) or is_smaller_func(projected_value, min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :case({
+                { argc = 2,       type = "string" },
+                { type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string, is_smaller: string): any
+            function(_)
+                local is_selector_predicate = string.find(selector_or_is_smaller --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_selector_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_is_smaller, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_is_smaller)
+                end
+
+                local is_smaller_predicate = string.find(is_smaller --[[@as string]], "=>") ~= nil
+                if not is_smaller_predicate then
+                    error("Expected a function for is_smaller parameter, got string without lambda expression: " ..
+                        is_smaller)
+                end
+                local is_smaller_func = compileEnumerableStringExpression(is_smaller, "is_smaller")
+
+                local iter = self:iter()
+                local value = { iter() }
+                local min_value
+                while #value ~= 0 do
+                    local projected_value = selector_func(table.unpack(value))
+                    if (min_value == nil) or is_smaller_func(projected_value, min_value) then
+                        min_value = projected_value
+                    end
+                    value = { iter() }
+                end
+                return min_value
+            end)
+        :default(function(x)
+            error("no signature enumerable<T>:min(" ..
+                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
+                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
+        end)
+        :result()
+end
+
+---@generic T, K, V
 ---@overload fun(self: enumerable<T>): iter<T>
 ---@overload fun(self: enumerable<K, V>): iter<K, V>
 function enumerable_impl:iter()
@@ -1555,6 +1756,20 @@ function list_impl:max(...)
     validateList(self)
 
     return self:enumerate():max(...)
+end
+
+---@generic T
+---@overload fun(self: list<T>): T
+---@overload fun(self: list<T>, selector: fun(item: T): (any)): any
+---@overload fun(self: list<T>, selector: string): any
+---@overload fun(self: list<T>, selector: fun(item: T): (any), is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: list<T>, selector: string, is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: list<T>, selector: fun(item: T): (any), is_smaller: string): any
+---@overload fun(self: list<T>, selector: string, is_smaller: string): any
+function list_impl:min(...)
+    validateList(self)
+
+    return self:enumerate():min(...)
 end
 
 ---@generic T
@@ -1760,6 +1975,20 @@ function dict_impl:max(...)
     validateDict(self)
 
     return self:enumerate():max(...)
+end
+
+---@generic K, V
+---@overload fun(self: enumerable<K, V>): V
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): any
+---@overload fun(self: enumerable<K, V>, selector: string): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_smaller: fun(a: any, b: any): (boolean)): any
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), is_smaller: string): any
+---@overload fun(self: enumerable<K, V>, selector: string, is_smaller: string): any
+function dict_impl:min(...)
+    validateDict(self)
+
+    return self:enumerate():min(...)
 end
 
 ---@generic T
