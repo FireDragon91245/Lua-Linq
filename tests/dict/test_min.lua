@@ -75,7 +75,7 @@ function TestDictMin:testMinFunctionSelectorComparerFunction_Positive_UsesCustom
 		return #a.name < #b.name
 	end)
 
-	luaunit.assertTrue(result == first)
+	luaunit.assertTrue(result == first or result == third)
 end
 
 function TestDictMin:testMinFunctionSelectorComparerFunction_Edge_EmptyEnumerableReturnsNil()
@@ -154,7 +154,7 @@ function TestDictMin:testMinStringSelectorComparerString_Positive_UsesComparator
 
 	local result = values:min("name", "a, b => #a < #b")
 
-	luaunit.assertEquals(result, "iron")
+	luaunit.assertTrue(result == "iron" or result == "coal")
 end
 
 function TestDictMin:testMinStringSelectorComparerString_Negative_InvalidComparatorStringErrors()

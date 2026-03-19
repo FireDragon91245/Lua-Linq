@@ -556,6 +556,54 @@ linq.IGNORE_MISSING = setmetatable({
     priority = 1
 }, makeComparerMeta())
 
+---@param func_name string
+---@param args table
+---@param canidates table
+local function error_invalid_signature(func_name, args, canidates)
+    if #args == 0 then
+        local mt = getmetatable(args)
+        if mt.__index and type(mt.__index) == "table" then
+            args = mt.__index
+        end
+    end
+    local message = "\nInvalid call to " .. func_name .. ": " .. func_name .. "("
+    local any_arg = false
+    for i, arg in ipairs(args) do
+        if arg.type ~= "nil" then
+            message = message .. (arg.type or "nil")
+            if arg.ext_type then
+                message = message .. ": " .. arg.ext_type
+            end
+            message = message .. ", "
+            any_arg = true
+        end
+    end
+    if any_arg then
+        message = message:sub(1, -3)
+    end
+    message = message .. ")\n\nPossible signatures are:\n"
+    for _, candidate in ipairs(canidates) do
+        message = message .. "    " .. func_name .. "("
+        local any_candidate = false
+        for i, arg in ipairs(candidate) do
+            local arg_type = arg.type or "nil"
+            if arg_type ~= "nil" then
+                message = message .. arg_type
+                if arg.ext_type then
+                    message = message .. ": " .. arg.ext_type
+                end
+                message = message .. ", "
+                any_candidate = true
+            end
+        end
+        if any_candidate then
+            message = message:sub(1, -3)
+        end
+        message = message .. ")\n"
+    end
+    error(message)
+end
+
 ---@generic T, K, V
 ---@overload fun(self: enumerable<T>): enumerable<T>
 ---@overload fun(self: enumerable<K, V>): enumerable<K, V>
@@ -578,6 +626,7 @@ function enumerable_impl:distinct(...)
             makeArgDescriptor(comparer_or_keySelector, argc),
             makeArgDescriptor(comparer)
         })
+        :track_cases()
         :case({
                 { argc = 0,    type = "nil" },
                 { type = "nil" }
@@ -827,10 +876,8 @@ function enumerable_impl:distinct(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:distinct(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
-                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:distinct", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -879,6 +926,7 @@ function enumerable_impl:where(...)
             makeArgDescriptor(value_or_comparer),
             makeArgDescriptor(equality_comparer)
         })
+        :track_cases()
         :case({
                 { argc = 1,    type = "function" },
                 { type = "nil" },
@@ -1022,13 +1070,8 @@ function enumerable_impl:where(...)
                     end)
                 }, makeEnumerableMeta())
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:where(" ..
-                (x[1].type or "nil") ..
-                ", " ..
-                (x[2].type or "nil") ..
-                ": " ..
-                (x[2].ext_type or "nil") .. ", " .. (x[3].type or "nil") .. ": " .. (x[3].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:where", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -1046,6 +1089,7 @@ function enumerable_impl:select(...)
     return map({
             makeArgDescriptor(selector, argc)
         })
+        :track_cases()
         :case({
                 { argc = 1, type = "function" }
             },
@@ -1091,9 +1135,8 @@ function enumerable_impl:select(...)
                     end
                 }, makeEnumerableMeta())
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:select(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:select", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -1116,6 +1159,7 @@ function enumerable_impl:collect(...)
             makeArgDescriptor(consumer),
             makeArgDescriptor(finalizer)
         })
+        :track_cases()
         :case({
                 { argc = 1,    type = "function" },
                 { type = "nil" },
@@ -1160,11 +1204,8 @@ function enumerable_impl:collect(...)
                 end
                 return finalizer(acc)
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:collect(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
-                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ", " ..
-                (x[3].type or "nil") .. ": " .. (x[3].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:collect", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -1183,6 +1224,7 @@ function enumerable_impl:any(...)
     return map({
             makeArgDescriptor(predicate, argc)
         })
+        :track_cases()
         :case({
                 { argc = 0, type = "nil" }
             },
@@ -1234,9 +1276,8 @@ function enumerable_impl:any(...)
                 end
                 return false
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:any(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:any", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -1265,6 +1306,7 @@ function enumerable_impl:max(...)
             makeArgDescriptor(selector_or_is_bigger, argc),
             makeArgDescriptor(is_bigger)
         })
+        :track_cases()
         :case({
                 { argc = 0,    type = "nil" },
                 { type = "nil" }
@@ -1434,10 +1476,8 @@ function enumerable_impl:max(...)
                 end
                 return max_value
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:max(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
-                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:max", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -1466,6 +1506,7 @@ function enumerable_impl:min(...)
             makeArgDescriptor(selector_or_is_smaller, argc),
             makeArgDescriptor(is_smaller)
         })
+        :track_cases()
         :case({
                 { argc = 0,    type = "nil" },
                 { type = "nil" }
@@ -1635,10 +1676,8 @@ function enumerable_impl:min(...)
                 end
                 return min_value
             end)
-        :default(function(x)
-            error("no signature enumerable<T>:min(" ..
-                (x[1].type or "nil") .. ": " .. (x[1].ext_type or "nil") .. ", " ..
-                (x[2].type or "nil") .. ": " .. (x[2].ext_type or "nil") .. ")")
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:min", signature, existing_signatures or {})
         end)
         :result()
 end

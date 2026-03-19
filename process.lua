@@ -18,7 +18,7 @@ end
 local t = table()
 
 local dict = linq.dict(t)
-local enum2 = dict:enumerate():select("k, v => v, k")
+local enum2 = dict:enumerate():select("k, v => v, k"):distinct(12)
 
 print(enum2:max("v, k => v.age"))
 

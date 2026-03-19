@@ -453,5 +453,6 @@ function TestDictWhere:testWhereInvalidSignatureErrors()
 	local err_text = tostring(err)
 
 	luaunit.assertFalse(ok)
-	luaunit.assertTrue(string.find(err_text, "no signature enumerable<T>:where", 1, true) ~= nil)
+	luaunit.assertTrue(string.find(err_text, "Invalid call to enumerable:where", 1, true) ~= nil)
+	luaunit.assertTrue(string.find(err_text, "Possible signatures are:", 1, true) ~= nil)
 	end

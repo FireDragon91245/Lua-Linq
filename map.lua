@@ -1,4 +1,4 @@
----@alias map_callback fun(arg: any): any
+---@alias map_callback fun(arg: any, failed_cases: table|nil): any
 ---@alias map_predicate string|map_callback
 ---@alias map_pattern table|function|number|string|boolean|nil
 
@@ -15,6 +15,7 @@
 ---@field match boolean
 ---@field result_value any
 ---@field cache_store table|nil
+---@field failed_cases table|nil
 local map_class = {}
 
 local predicate_parser = require("predicates"):get()
@@ -27,13 +28,13 @@ setmetatable(map_class, {
 })
 
 ---@param self map_instance
----@return any
+---@return any, table|nil
 local function get_consumer_arg(self)
     if type(self.data) ~= "table" and self.cache_store == nil then
-        return self.data
+        return self.data, self.failed_cases
     end
 
-    return setmetatable(self.cache_store or {}, { __index = self.data })
+    return setmetatable(self.cache_store or {}, { __index = self.data }), self.failed_cases
 end
 
 ---@param self map_instance
@@ -147,6 +148,13 @@ function map_class.map(arg)
 end
 
 ---@param self map_instance
+---@return map_instance
+function map_class:track_cases()
+    self.failed_cases = self.failed_cases or {}
+    return self
+end
+
+---@param self map_instance
 ---@param condition map_pattern
 ---@param func map_predicate
 ---@return map_instance
@@ -170,16 +178,22 @@ function map_class:case(condition, func)
         if condition(self.data) then
             execute_consumer(self, resolved_func)
             self.match = true
+        elseif self.failed_cases ~= nil then
+            table.insert(self.failed_cases, condition)
         end
     elseif type(condition) == "table" then
         if self:match_table(self.cache_store, self.data, condition) then
             execute_consumer(self, resolved_func)
             self.match = true
+        elseif self.failed_cases ~= nil then
+            table.insert(self.failed_cases, condition)
         end
     elseif type(condition) == "number" or type(condition) == "boolean" or type(condition) == "nil" then
         if self.data == condition then
             execute_consumer(self, resolved_func)
             self.match = true
+        elseif self.failed_cases ~= nil then
+            table.insert(self.failed_cases, condition)
         end
     elseif type(condition) == "string" then
         if string.find(condition, "=>") then
@@ -187,10 +201,14 @@ function map_class:case(condition, func)
             if predicate and predicate(self.data) then
                 execute_consumer(self, resolved_func)
                 self.match = true
+            elseif self.failed_cases ~= nil then
+                table.insert(self.failed_cases, condition)
             end
         elseif self.data == condition then
             execute_consumer(self, resolved_func)
             self.match = true
+        elseif self.failed_cases ~= nil then
+            table.insert(self.failed_cases, condition)
         end
     end
 
