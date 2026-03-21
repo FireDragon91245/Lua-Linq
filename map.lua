@@ -13,6 +13,7 @@
 ---@class map_instance: map_class
 ---@field data any
 ---@field match boolean
+---@field pending_case_match boolean|nil
 ---@field result_value table|nil
 ---@field cache_store table|nil
 ---@field failed_cases table|nil
@@ -143,7 +144,7 @@ end
 ---@return map_instance
 function map_class.map(arg)
     ---@type map_instance
-    local instance = { data = arg, match = false, result_value = nil }
+    local instance = { data = arg, match = false, pending_case_match = false, result_value = nil }
     return setmetatable(instance, { __index = map_class }) --[[@as map_instance]]
 end
 
@@ -156,42 +157,76 @@ end
 
 ---@param self map_instance
 ---@param condition map_pattern
----@param func map_predicate
+---@param func map_predicate|nil
 ---@return map_instance
 function map_class:case(condition, func)
     if self.match then
         return self
     end
 
-    ---@type map_callback|false
-    local resolved_func = false
-    if type(func) == "string" then
-        resolved_func = predicate_parser:get_predicate_function(func)
-    elseif type(func) ~= "function" then
-        error("Cannot callback on type" .. type(func) .. "for map case")
-    else
-        resolved_func = func
+    if self.pending_case_match then
+        ---@type map_callback|false
+        local resolved_func = false
+        if type(func) == "string" then
+            resolved_func = predicate_parser:get_predicate_function(func)
+        elseif type(func) ~= "function" then
+            return self
+        else
+            resolved_func = func
+        end
+
+        ---@cast resolved_func map_callback
+        execute_consumer(self, resolved_func)
+        self.pending_case_match = false
+        self.match = true
+        return self
     end
 
-    ---@cast resolved_func map_callback
+    ---@type map_callback|false
+    local resolved_func = false
+    if func ~= nil then
+        if type(func) == "string" then
+            resolved_func = predicate_parser:get_predicate_function(func)
+        elseif type(func) ~= "function" then
+            error("Cannot callback on type" .. type(func) .. "for map case")
+        else
+            resolved_func = func
+        end
+    end
+
     if type(condition) == "function" then
         if condition(self.data) then
-            execute_consumer(self, resolved_func)
-            self.match = true
+            if func == nil then
+                self.pending_case_match = true
+            else
+                ---@cast resolved_func map_callback
+                execute_consumer(self, resolved_func)
+                self.match = true
+            end
         elseif self.failed_cases ~= nil then
             table.insert(self.failed_cases, condition)
         end
     elseif type(condition) == "table" then
         if self:match_table(self.cache_store, self.data, condition) then
-            execute_consumer(self, resolved_func)
-            self.match = true
+            if func == nil then
+                self.pending_case_match = true
+            else
+                ---@cast resolved_func map_callback
+                execute_consumer(self, resolved_func)
+                self.match = true
+            end
         elseif self.failed_cases ~= nil then
             table.insert(self.failed_cases, condition)
         end
     elseif type(condition) == "number" or type(condition) == "boolean" or type(condition) == "nil" then
         if self.data == condition then
-            execute_consumer(self, resolved_func)
-            self.match = true
+            if func == nil then
+                self.pending_case_match = true
+            else
+                ---@cast resolved_func map_callback
+                execute_consumer(self, resolved_func)
+                self.match = true
+            end
         elseif self.failed_cases ~= nil then
             table.insert(self.failed_cases, condition)
         end
@@ -199,14 +234,24 @@ function map_class:case(condition, func)
         if string.find(condition, "=>") then
             local predicate = predicate_parser:get_predicate_function(condition)
             if predicate and predicate(self.data) then
-                execute_consumer(self, resolved_func)
-                self.match = true
+                if func == nil then
+                    self.pending_case_match = true
+                else
+                    ---@cast resolved_func map_callback
+                    execute_consumer(self, resolved_func)
+                    self.match = true
+                end
             elseif self.failed_cases ~= nil then
                 table.insert(self.failed_cases, condition)
             end
         elseif self.data == condition then
-            execute_consumer(self, resolved_func)
-            self.match = true
+            if func == nil then
+                self.pending_case_match = true
+            else
+                ---@cast resolved_func map_callback
+                execute_consumer(self, resolved_func)
+                self.match = true
+            end
         elseif self.failed_cases ~= nil then
             table.insert(self.failed_cases, condition)
         end
