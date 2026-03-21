@@ -1,4 +1,4 @@
----@alias map_callback fun(arg: any, failed_cases: table|nil): any
+---@alias map_callback fun(arg: any, failed_cases: table|nil): ...: any
 ---@alias map_predicate string|map_callback
 ---@alias map_pattern table|function|number|string|boolean|nil
 
@@ -13,7 +13,7 @@
 ---@class map_instance: map_class
 ---@field data any
 ---@field match boolean
----@field result_value any
+---@field result_value table|nil
 ---@field cache_store table|nil
 ---@field failed_cases table|nil
 local map_class = {}
@@ -40,7 +40,7 @@ end
 ---@param self map_instance
 ---@param func map_callback
 local function execute_consumer(self, func)
-    self.result_value = func(get_consumer_arg(self))
+    self.result_value = { func(get_consumer_arg(self)) }
 end
 
 ---@param obj table
@@ -238,9 +238,10 @@ function map_class:default(func)
 end
 
 ---@param self map_instance
----@return any
+---@return any ...
 function map_class:result()
-    return self.result_value
+    if not self.result_value then return nil end
+    return table.unpack(self.result_value)
 end
 
 map_class.func_call = setmetatable({}, {
