@@ -18,7 +18,25 @@ end
 local t = table()
 
 local dict = linq.dict(t)
-local enum2 = dict:enumerate():select("k, v => v, k"):distinct(12)
+local names, ages = dict
+    :enumerate()
+    :where(function(k, v)
+        return k == "max" or k == "tom"
+    end)
+    :fork(function(e)
+        return e:select(function(k, v)
+            return k
+        end):collect(linq.list)
+    end, function(e)
+        return e:select(function(k, v)
+            return v.age
+        end):collect(linq.list)
+    end):spread()
 
-print(enum2:max("v, k => v.age"))
+for name in names:iter() do
+    print(name)
+end
 
+for age in ages:iter() do
+    print(age)
+end

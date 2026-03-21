@@ -52,8 +52,9 @@ end
 
 ---@param value any
 ---@param argc number|nil
+---@param literal any|nil
 ---@return table
-local function makeArgDescriptor(value, argc)
+local function makeArgDescriptor(value, argc, literal)
     local descriptor = {
         type = type(value),
         ext_type = getmetatable(value) ~= nil and getmetatable(value).__type or nil
@@ -61,6 +62,10 @@ local function makeArgDescriptor(value, argc)
 
     if argc ~= nil then
         descriptor.argc = argc
+    end
+
+    if literal ~= nil then
+        descriptor.literal = literal
     end
 
     return descriptor
@@ -574,6 +579,9 @@ local function error_invalid_signature(func_name, args, canidates)
             if arg.ext_type then
                 message = message .. ": " .. arg.ext_type
             end
+            if arg.literal then
+                message = message .. ": \"" .. arg.literal .. "\""
+            end
             message = message .. ", "
             any_arg = true
         end
@@ -591,6 +599,9 @@ local function error_invalid_signature(func_name, args, canidates)
                 message = message .. arg_type
                 if arg.ext_type then
                     message = message .. ": " .. arg.ext_type
+                end
+                if arg.literal then
+                    message = message .. ": \"" .. arg.literal .. "\""
                 end
                 message = message .. ", "
                 any_candidate = true
@@ -1678,6 +1689,285 @@ function enumerable_impl:min(...)
             end)
         :default(function(signature, existing_signatures)
             error_invalid_signature("enumerable:min", signature, existing_signatures or {})
+        end)
+        :result()
+end
+
+---@generic T, K, V, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
+---@overload fun(self: enumerable<T>): enumerable<T>, enumerable<T>
+---@overload fun(self: enumerable<K, V>): enumerable<K, V>, enumerable<K, V>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2)): enumerable<R1|R2>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2)): enumerable<R1|R2>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3)): enumerable<R1|R2|R3>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3)): enumerable<R1|R2|R3>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4)): enumerable<R1|R2|R3|R4>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4)): enumerable<R1|R2|R3|R4>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5)): enumerable<R1|R2|R3|R4|R5>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5)): enumerable<R1|R2|R3|R4|R5>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5), fork6: fun(enumerable: enumerable<T>): (R6)): enumerable<R1|R2|R3|R4|R5|R6>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5), fork6: fun(enumerable: enumerable<K, V>): (R6)): enumerable<R1|R2|R3|R4|R5|R6>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5), fork6: fun(enumerable: enumerable<T>): (R6), fork7: fun(enumerable: enumerable<T>): (R7)): enumerable<R1|R2|R3|R4|R5|R6|R7>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5), fork6: fun(enumerable: enumerable<K, V>): (R6), fork7: fun(enumerable: enumerable<K, V>): (R7)): enumerable<R1|R2|R3|R4|R5|R6|R7>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5), fork6: fun(enumerable: enumerable<T>): (R6), fork7: fun(enumerable: enumerable<T>): (R7), fork8: fun(enumerable: enumerable<T>): (R8)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5), fork6: fun(enumerable: enumerable<K, V>): (R6), fork7: fun(enumerable: enumerable<K, V>): (R7), fork8: fun(enumerable: enumerable<K, V>): (R8)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5), fork6: fun(enumerable: enumerable<T>): (R6), fork7: fun(enumerable: enumerable<T>): (R7), fork8: fun(enumerable: enumerable<T>): (R8), fork9: fun(enumerable: enumerable<T>): (R9)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8|R9>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5), fork6: fun(enumerable: enumerable<K, V>): (R6), fork7: fun(enumerable: enumerable<K, V>): (R7), fork8: fun(enumerable: enumerable<K, V>): (R8), fork9: fun(enumerable: enumerable<K, V>): (R9)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8|R9>
+---@overload fun(self: enumerable<T>, fork1: fun(enumerable: enumerable<T>): (R1), fork2: fun(enumerable: enumerable<T>): (R2), fork3: fun(enumerable: enumerable<T>): (R3), fork4: fun(enumerable: enumerable<T>): (R4), fork5: fun(enumerable: enumerable<T>): (R5), fork6: fun(enumerable: enumerable<T>): (R6), fork7: fun(enumerable: enumerable<T>): (R7), fork8: fun(enumerable: enumerable<T>): (R8), fork9: fun(enumerable: enumerable<T>): (R9), fork10: fun(enumerable: enumerable<T>): (R10)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8|R9|R10>
+---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2), fork3: fun(enumerable: enumerable<K, V>): (R3), fork4: fun(enumerable: enumerable<K, V>): (R4), fork5: fun(enumerable: enumerable<K, V>): (R5), fork6: fun(enumerable: enumerable<K, V>): (R6), fork7: fun(enumerable: enumerable<K, V>): (R7), fork8: fun(enumerable: enumerable<K, V>): (R8), fork9: fun(enumerable: enumerable<K, V>): (R9), fork10: fun(enumerable: enumerable<K, V>): (R10)): enumerable<R1|R2|R3|R4|R5|R6|R7|R8|R9|R10>
+function enumerable_impl:fork(...)
+    local argc = select("#", ...)
+    local forks = { ... }
+
+    return map({
+            makeArgDescriptor(forks[1], argc),
+            makeArgDescriptor(forks[2]),
+            makeArgDescriptor(forks[3]),
+            makeArgDescriptor(forks[4]),
+            makeArgDescriptor(forks[5]),
+            makeArgDescriptor(forks[6]),
+            makeArgDescriptor(forks[7]),
+            makeArgDescriptor(forks[8]),
+            makeArgDescriptor(forks[9]),
+            makeArgDescriptor(forks[10])
+        })
+        :track_cases()
+        :case({
+            { argc = 0, type = "nil" },
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {}
+        }, function(_)
+            return self, self
+        end)
+        :case({
+            { argc = 2,         type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 3,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 4,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {},
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 5,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 6,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 7,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {},
+            {}
+        })
+        :case({
+            { argc = 8,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {},
+            {}
+        })
+        :case({
+            { argc = 9,         type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            {}
+        })
+        :case({
+            { argc = 10,        type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" },
+            { type = "function" }
+        }, function(_)
+            local results = {}
+            for i = 1, argc do
+                table.insert(results, forks[i](self))
+            end
+            return setmetatable({
+                __src = results,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    iter.__data = iter.__data or {}
+                    if iter.__data.idx == nil then
+                        iter.__data.idx = 1
+                    end
+                    local value = enumerable.__src[iter.__data.idx]
+                    iter.__data.idx = iter.__data.idx + 1
+                    return value
+                end
+            }, makeEnumerableMeta())
+        end)
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:fork", signature, existing_signatures or {})
+        end)
+        :result()
+end
+
+---@generic T, K, V
+---@overload fun(self: enumerable<T>): ...: T
+---@overload fun(self: enumerable<K, V>): ...: { [1]: K, [2]: V }
+---@overload fun(self: enumerable<K, V>, mode: "Pairs"): ...: { [1]: K, [2]: V }
+---@overload fun(self: enumerable<K, V>, mode: "Keys"): ...: K
+---@overload fun(self: enumerable<K, V>, mode: "Values"): ...: V
+---@overload fun(self: enumerable<K, V>, mode: "Interwoven"): ...: K|V
+function enumerable_impl:spread(...)
+    local argc = select("#", ...)
+    local arg = select(1, ...)
+
+    return map({
+            makeArgDescriptor(arg, argc, arg)
+        })
+        :track_cases()
+        :case({
+            { argc = 0, type = "nil" }
+        })
+        :case({
+                { argc = 1, type = "string", literal = "Pairs" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): ...: T
+            ---@generic K, V
+            ---@type fun(self: enumerable<K, V>): ...: { [1]: K, [2]: V }
+            ---@generic K, V
+            ---@type fun(self: enumerable<K, V>, mode: "Pairs"): ...: { [1]: K, [2]: V }
+            function(_)
+                local iter = self:iter()
+                local item = { iter() }
+                local items = {}
+                while #item ~= 0 do
+                    if #item == 1 then
+                        table.insert(items, item[1])
+                    else
+                        table.insert(items, item)
+                    end
+                    item = { iter() }
+                end
+                return table.unpack(items)
+            end)
+        :case({
+                { argc = 1, type = "string", literal = "Keys" }
+            },
+            ---@generic K, V
+            ---@type fun(self: enumerable<K, V>, mode: "Keys"): ...: K
+            function(_)
+                local iter = self:iter()
+                local key = iter();
+                local keys = {}
+                while key ~= nil do
+                    table.insert(keys, key)
+                    key = iter()
+                end
+                return table.unpack(keys)
+            end)
+        :case({
+                { argc = 1, type = "string", literal = "Values" }
+            },
+            ---@generic K, V
+            ---@type fun(self: enumerable<K, V>, mode: "Values"): ...: V
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                local values = {}
+                while #value ~= 0 do
+                    table.insert(values, value[#value])
+                    value = { iter() }
+                end
+                return table.unpack(values)
+            end)
+        :case({
+                { argc = 1, type = "string", literal = "Interwoven" }
+            },
+            ---@generic K, V
+            ---@type fun(self: enumerable<K, V>, mode: "Interwoven"): ...: K|V
+            function(_)
+                local iter = self:iter()
+                local item = { iter() }
+                local items = {}
+                while #item ~= 0 do
+                    for _, value in ipairs(item) do
+                        table.insert(items, value)
+                    end
+                    item = { iter() }
+                end
+                return table.unpack(items)
+            end)
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:spread", signature, existing_signatures or {})
         end)
         :result()
 end
