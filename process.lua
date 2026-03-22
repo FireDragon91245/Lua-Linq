@@ -5,7 +5,7 @@ local items = linq.list(1, 2, 3)
 local enum = items:enumerate()
 local oit = enum:iter()
 
----@return table<string, number>
+---@return table<string, { age: number }>
 local function table()
     return {
         ["max"] = { age = 30 },
@@ -33,6 +33,7 @@ local names, ages = dict
         end):collect(linq.list)
     end):spread()
 
+print(names:first())
 for name in names:iter() do
     print(name)
 end
