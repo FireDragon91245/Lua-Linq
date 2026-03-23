@@ -6,7 +6,7 @@ local enum = items:enumerate()
 local oit = enum:iter()
 
 ---@return table<string, { age: number }>
-local function table()
+local function make_table()
     return {
         ["max"] = { age = 30 },
         ["tom"] = { age = 25 },
@@ -15,23 +15,27 @@ local function table()
     }
 end
 
-local t = table()
-
-local dict = linq.dict(t)
-local names, ages = dict
+local abc = linq.dict(make_table())
     :enumerate()
     :where(function(k, v)
-        return k == "max" or k == "tom"
+        return k == 'max' or k == 'tom'
     end)
     :fork(function(e)
-        return e:select(function(k, v)
+        local tmp = e:select(function(k, v)
             return k
-        end):collect(linq.list)
+        end)
+        local list = tmp:collect(linq.list)
+        return list
     end, function(e)
-        return e:select(function(k, v)
+        local tmp = e:select(function(k, v)
             return v.age
-        end):collect(linq.list)
-    end):spread()
+        end)
+        local list = tmp:collect(linq.list)
+        return list
+    end)
+
+local names, ages = abc:spread()
+
 
 print(names:first())
 for name in names:iter() do
