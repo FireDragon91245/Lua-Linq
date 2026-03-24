@@ -1,5 +1,5 @@
 local luaunit = require('luaunit')
-local map = require('map')
+local map = require('linq.map')
 
 TestMap = {}
 

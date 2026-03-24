@@ -1,5 +1,5 @@
-local map = require("map")
-local predicate_parser = require("predicates"):get()
+local map = require("linq.map")
+local predicate_parser = require("linq.predicates"):get()
 
 ---@class linq
 local linq = {}
