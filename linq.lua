@@ -2047,6 +2047,102 @@ function enumerable_impl:first(...)
         :result()
 end
 
+---@generic T, K, V, R
+---@overload fun(self: enumerable<T>): T
+---@overload fun(self: enumerable<K, V>): (K, V)
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (R)): R
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (R)): R
+---@overload fun(self: enumerable<T>, selector: string): any
+---@overload fun(self: enumerable<K, V>, selector: string): any
+function enumerable_impl:last(...)
+    local argc = select("#", ...)
+    local selector = select(1, ...)
+
+    return map({
+            makeArgDescriptor(selector, argc)
+        })
+        :track_cases()
+        :case({
+                { argc = 0, type = "nil" },
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): T
+            function(_)
+                local iter = self:iter()
+                local item = { iter() }
+                local last_item = item
+
+                while #item ~= 0 do
+                    last_item = item
+                    item = { iter() }
+                end
+
+                return table.unpack(last_item)
+            end)
+        :case({
+                { argc = 1, type = "function" },
+            },
+            ---@generic T, R
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): (R)): R
+            function(_)
+                local iter = self:iter()
+                local item = { iter() }
+                local last_item = item
+
+                while #item ~= 0 do
+                    last_item = item
+                    item = { iter() }
+                end
+
+                if #last_item ~= 0 then
+                    local projected_value = selector(table.unpack(last_item))
+                    if projected_value ~= nil then
+                        return projected_value
+                    else
+                        return nil
+                    end
+                end
+                return nil
+            end)
+        :case({
+                { argc = 1, type = "string" },
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string): any
+            function(_)
+                local is_predicate = string.find(selector --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_predicate then
+                    selector_func = compileEnumerableStringExpression(selector, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector)
+                end
+
+                local iter = self:iter()
+                local item = { iter() }
+                local last_item = item
+
+                while #item ~= 0 do
+                    last_item = item
+                    item = { iter() }
+                end
+
+                if #last_item ~= 0 then
+                    local projected_value = selector_func(table.unpack(last_item))
+                    if projected_value ~= nil then
+                        return projected_value
+                    else
+                        return nil
+                    end
+                end
+                return nil
+            end)
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:last", signature, existing_signatures or {})
+        end)
+        :result()
+end
+
 ---@generic T, K, V
 ---@overload fun(self: enumerable<T>): iter<T>
 ---@overload fun(self: enumerable<K, V>): iter<K, V>
@@ -2210,6 +2306,16 @@ function list_impl:first(...)
     validateList(self)
 
     return self:enumerate():first(...)
+end
+
+---@generic T, R
+---@overload fun(self: enumerable<T>): T
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (R)): R
+---@overload fun(self: enumerable<T>, selector: string): any
+function list_impl:last(...)
+    validateList(self)
+
+    return self:enumerate():last(...)
 end
 
 ---@generic T
@@ -2468,6 +2574,16 @@ function dict_impl:first(...)
     validateDict(self)
 
     return self:enumerate():first(...)
+end
+
+---@generic K, V, R
+---@overload fun(self: enumerable<K, V>): (K, V)
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (R)): R
+---@overload fun(self: enumerable<K, V>, selector: string): any
+function dict_impl:last(...)
+    validateDict(self)
+
+    return self:enumerate():last(...)
 end
 
 ---@generic T
