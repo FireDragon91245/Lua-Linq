@@ -1,4 +1,5 @@
-![LuaRocks](https://img.shields.io/luarocks/v/firedragon91245/lua-linq?style=for-the-badge&label=Lua-Linq&labelColor=2C4067&color=FFFFFF&link=https%3A%2F%2Fluarocks.org%2Fmodules%2Ffiredragon91245%2Flua-linq)
+![LuaRocks](https://img.shields.io/luarocks/v/firedragon91245/lua-linq?style=for-the-badge&label=Lua-Linq&labelColor=2C4067&color=FFFFFF&link=https%3A%2F%2Fluarocks.org%2Fmodules%2Ffiredragon91245%2Flua-linq) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/FireDragon91245/Lua-Linq/lua-tests.yml?style=for-the-badge&logo=github&logoSize=3&label=Lua%20tests)
+
 # Lua-Linq
 
 Lua-Linq is a small LINQ-style library for Lua built around lazy, stateless enumerables. It wraps array-like tables as lists and map-like tables as dicts, lets you compose queries without mutating the source, and keeps the final step close to normal Lua iteration.
