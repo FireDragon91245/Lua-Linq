@@ -1,0 +1,16 @@
+name: Lua tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: luarocks/gh-actions-lua@v11
+      - uses: luarocks/gh-actions-luarocks@v6
+      - run: luarocks install LuaUnit
+      - run: luarocks test
