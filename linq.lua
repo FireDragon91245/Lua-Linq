@@ -31,25 +31,6 @@ local iter_impl = {}
 ---@field priority number
 ---@field comparers { [type]: equality_comparer }
 
----@generic T
----@param list T[]
----@param item T
-local function insert(list, item)
-    table.insert(list, item)
-end
-
----@return type[]
-local function types(...)
-    ---@type any[]
-    local items = { ... }
-    ---@type type[]
-    local result = {}
-    for i, item in ipairs(items) do
-        insert(result, type(item))
-    end
-    return result
-end
-
 ---@param value any
 ---@param argc number|nil
 ---@param literal any|nil
@@ -1869,7 +1850,10 @@ function enumerable_impl:fork(...)
         }, function(_)
             local results = {}
             for i = 1, argc do
-                table.insert(results, forks[i](self))
+                local value = forks[i](self)
+                if value ~= nil then
+                    table.insert(results, value)
+                end
             end
             return setmetatable({
                 __src = results,
@@ -2182,6 +2166,38 @@ function enumerable_impl:sort(...)
     local selector_or_comparer = select(1, ...)
     local comparer = select(2, ...)
 
+    ---@param selector (fun(...: any): (any))|nil
+    ---@param comparer equality_comparer|(fun(a: any, b: any): (boolean))|nil
+    ---@return fun(a: any, b: any): boolean
+    local make_sort_callback = function(selector, comparer)
+        return function(a, b)
+            local projected_a
+            local projected_b
+            if selector ~= nil then
+                projected_a = selector(table.unpack(a))
+                projected_b = selector(table.unpack(b))
+            else
+                projected_a = a[#a]
+                projected_b = b[#b]
+            end
+            if type(comparer) == "table" then
+                projected_a, projected_b = comparer:compare(projected_a, projected_b, true)
+            elseif type(comparer) == "function" then
+                return comparer(projected_a, projected_b)
+            end
+
+            if projected_a == nil then
+                return true
+            elseif projected_b == nil then
+                return false
+            elseif type(projected_a) == "number" and type(projected_b) == "number" then
+                return projected_a < projected_b
+            else
+                return tostring(projected_a) < tostring(projected_b)
+            end
+        end
+    end
+
     return map({
             makeArgDescriptor(selector_or_comparer, argc),
             makeArgDescriptor(comparer)
@@ -2209,17 +2225,7 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local last_a = a[#a]
-                                local last_b = b[#b]
-                                if last_a == nil then
-                                    return true
-                                elseif last_b == nil then
-                                    return false
-                                else
-                                    return tostring(last_a) < tostring(last_b)
-                                end
-                            end)
+                            table.sort(data, make_sort_callback(nil, nil))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2255,17 +2261,7 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local adjusted_a, adjusted_b = selector_or_comparer --[[@as equality_comparer]]
-                                    :compare(a[#a], b[#b], true)
-                                if adjusted_a == nil then
-                                    return true
-                                elseif adjusted_b == nil then
-                                    return false
-                                else
-                                    return adjusted_a < adjusted_b
-                                end
-                            end)
+                            table.sort(data, make_sort_callback(nil, selector_or_comparer --[[@as equality_comparer]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2302,19 +2298,9 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_or_comparer(table.unpack(a))
-                                local projected_b = selector_or_comparer(table.unpack(b))
-                                local adjusted_a, adjusted_b = comparer --[[@as equality_comparer]]
-                                    :compare(projected_a, projected_b, true)
-                                if adjusted_a == nil then
-                                    return true
-                                elseif adjusted_b == nil then
-                                    return false
-                                else
-                                    return adjusted_a < adjusted_b
-                                end
-                            end)
+                            table.sort(data,
+                                make_sort_callback(selector_or_comparer --[[@as fun(...: any): (any)]],
+                                    comparer --[[@as equality_comparer]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2368,19 +2354,7 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_func(table.unpack(a))
-                                local projected_b = selector_func(table.unpack(b))
-                                local adjusted_a, adjusted_b = comparer --[[@as equality_comparer]]
-                                    :compare(projected_a, projected_b, true)
-                                if adjusted_a == nil then
-                                    return true
-                                elseif adjusted_b == nil then
-                                    return false
-                                else
-                                    return adjusted_a < adjusted_b
-                                end
-                            end)
+                            table.sort(data, make_sort_callback(selector_func, comparer --[[@as equality_comparer]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2416,17 +2390,7 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_or_comparer(table.unpack(a))
-                                local projected_b = selector_or_comparer(table.unpack(b))
-                                if projected_a == nil then
-                                    return true
-                                elseif projected_b == nil then
-                                    return false
-                                else
-                                    return tostring(projected_a) < tostring(projected_b)
-                                end
-                            end)
+                            table.sort(data, make_sort_callback(selector_or_comparer --[[@as fun(...: any): (any)]], nil))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2469,17 +2433,7 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_func(table.unpack(a))
-                                local projected_b = selector_func(table.unpack(b))
-                                if projected_a == nil then
-                                    return true
-                                elseif projected_b == nil then
-                                    return false
-                                else
-                                    return tostring(projected_a) < tostring(projected_b)
-                                end
-                            end)
+                            table.sort(data, make_sort_callback(selector_func, nil))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2515,11 +2469,9 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_or_comparer(table.unpack(a))
-                                local projected_b = selector_or_comparer(table.unpack(b))
-                                return comparer(projected_a, projected_b)
-                            end)
+                            table.sort(data,
+                                make_sort_callback(selector_or_comparer --[[@as fun(...: any): (any)]],
+                                    comparer --[[@as fun(a: any, b: any): (boolean)]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2572,11 +2524,8 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_func(table.unpack(a))
-                                local projected_b = selector_func(table.unpack(b))
-                                return comparer(projected_a, projected_b)
-                            end)
+                            table.sort(data,
+                                make_sort_callback(selector_func, comparer --[[@as fun(a: any, b: any): (boolean)]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2630,11 +2579,8 @@ function enumerable_impl:sort(...)
                                 table.insert(data, value)
                                 value = { source_iter() }
                             end
-                            table.sort(data, function(a, b)
-                                local projected_a = selector_func(table.unpack(a))
-                                local projected_b = selector_func(table.unpack(b))
-                                return comparer_func(projected_a, projected_b)
-                            end)
+                            table.sort(data,
+                                make_sort_callback(selector_func, comparer_func --[[@as fun(a: any, b: any): (boolean)]]))
                             data.idx = 1
                             iter.__data[data_key] = data
                         end
@@ -2650,6 +2596,52 @@ function enumerable_impl:sort(...)
             end)
         :default(function(signature, existing_signatures)
             error_invalid_signature("enumerable:sort", signature, existing_signatures or {})
+        end)
+        :result()
+end
+
+---@generic T, K, V
+---@overload fun(self: enumerable<T>, action: fun(item: T))
+---@overload fun(self: enumerable<K, V>, action: fun(key: K, value: V))
+---@overload fun(self: enumerable<T>, action: string)
+---@overload fun(self: enumerable<K, V>, action: string)
+function enumerable_impl:foreach(...)
+    local argc = select("#", ...)
+    local action = select(1, ...)
+
+    return map({
+            makeArgDescriptor(action, argc)
+        })
+        :track_cases()
+        :case({
+                { argc = 1, type = "function" },
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, action: fun(item: T))
+            function(_)
+                local iter = self:iter()
+                local value = { iter() }
+                while #value ~= 0 do
+                    action(table.unpack(value))
+                    value = { iter() }
+                end
+            end)
+        :case({
+                { argc = 1, type = "string" },
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, action: string)
+            function(_)
+                local action_func = compileEnumerableStringExpression(action, "action")
+                local iter = self:iter()
+                local value = { iter() }
+                while #value ~= 0 do
+                    action_func(table.unpack(value))
+                    value = { iter() }
+                end
+            end)
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:foreach", signature, existing_signatures or {})
         end)
         :result()
 end
@@ -2797,6 +2789,15 @@ function list_impl:sort(...)
     validateList(self)
 
     return self:enumerate():sort(...)
+end
+
+---@generic T
+---@overload fun(self: list<T>, action: fun(item: T))
+---@overload fun(self: list<T>, action: string)
+function list_impl:foreach(...)
+    validateList(self)
+
+    return self:enumerate():foreach(...)
 end
 
 ---@generic T, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
@@ -3080,6 +3081,15 @@ function dict_impl:sort(...)
     return self:enumerate():sort(...)
 end
 
+---@generic K, V
+---@overload fun(self: enumerable<K, V>, action: fun(key: K, value: V))
+---@overload fun(self: enumerable<K, V>, action: string)
+function dict_impl:foreach(...)
+    validateDict(self)
+
+    return self:enumerate():foreach(...)
+end
+
 ---@generic K, V, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
 ---@overload fun(self: enumerable<K, V>): enumerable<K, V>, enumerable<K, V>
 ---@overload fun(self: enumerable<K, V>, fork1: fun(enumerable: enumerable<K, V>): (R1), fork2: fun(enumerable: enumerable<K, V>): (R2)): enumerable<R1|R2>
@@ -3190,6 +3200,116 @@ function linq.dict(...)
         end
         return setmetatable(newDict, makeDictMeta())
     end
+end
+
+---@overload fun(start: number, end: number): enumerable<number>
+---@overload fun(count: number): enumerable<number>
+---@overload fun(start: number, end: number, step: number): enumerable<number>
+function linq.range(...)
+    local argc = select("#", ...)
+    local arg1 = select(1, ...)
+    local arg2 = select(2, ...)
+    local arg3 = select(3, ...)
+
+    ---@param definition table
+    ---@return enumerable<number>
+    local function makeRangeEnumerable(definition)
+        definition.__src = definition
+        return setmetatable(definition, makeEnumerableMeta())
+    end
+
+    return map({
+            makeArgDescriptor(arg1, argc),
+            makeArgDescriptor(arg2),
+            makeArgDescriptor(arg3),
+        })
+        :track_cases()
+        :case({
+            { argc = 2,       type = "number" },
+            { type = "number" },
+        }, function(_)
+            local step = arg1 <= arg2 and 1 or -1
+            return makeRangeEnumerable({
+                __start = arg1,
+                __end = arg2,
+                __step = step,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    iter.__data = iter.__data or {}
+                    if iter.__data.current == nil then
+                        iter.__data.current = enumerable.__start
+                    else
+                        iter.__data.current = iter.__data.current + enumerable.__step
+                    end
+
+                    if (enumerable.__step > 0 and iter.__data.current > enumerable.__end) or (enumerable.__step < 0 and iter.__data.current < enumerable.__end) then
+                        return nil
+                    end
+
+                    return iter.__data.current
+                end,
+            })
+        end)
+        :case({
+            { argc = 1, type = "number" },
+        }, function(_)
+            local count = arg1
+            return makeRangeEnumerable({
+                __count = count,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    iter.__data = iter.__data or {}
+                    if iter.__data.current == nil then
+                        iter.__data.current = 0
+                    else
+                        iter.__data.current = iter.__data.current + 1
+                    end
+
+                    if iter.__data.current >= enumerable.__count then
+                        return nil
+                    end
+
+                    return iter.__data.current
+                end,
+            })
+        end)
+        :case({
+            { argc = 3,       type = "number" },
+            { type = "number" },
+            { type = "number" },
+        }, function(_)
+            if arg3 == 0 then
+                error("linq.range step cannot be 0")
+            end
+            local step = arg1 <= arg2 and math.abs(arg3) or -math.abs(arg3)
+            return makeRangeEnumerable({
+                __start = arg1,
+                __end = arg2,
+                __step = step,
+                __next = function(iter, enumerable)
+                    validateIter(iter)
+
+                    iter.__data = iter.__data or {}
+                    if iter.__data.current == nil then
+                        iter.__data.current = enumerable.__start
+                    else
+                        iter.__data.current = iter.__data.current + enumerable.__step
+                    end
+
+                    if (enumerable.__step > 0 and iter.__data.current > enumerable.__end) or (enumerable.__step < 0 and iter.__data.current < enumerable.__end) then
+                        return nil
+                    end
+
+                    return iter.__data.current
+                end,
+            })
+        end)
+        :default(function(signature, available_signatures)
+            error_invalid_signature("linq.range", signature, available_signatures or {})
+        end)
+        :result()
 end
 
 return linq
