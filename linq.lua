@@ -95,6 +95,20 @@ local function compileEnumerableStringExpression(expression, kind)
     return compiled
 end
 
+---@param table table
+---@return string
+local function table_addres(table)
+    local str = tostring(table)
+    return str:sub(-16)
+end
+
+---@param table table
+---@param key string
+---@return string
+local function get_per_table_uniq_key(table, key)
+    return table_addres(table) .. key
+end
+
 ---@param property string
 ---@return function
 local function makeValuePropertySelector(property)
@@ -2143,6 +2157,503 @@ function enumerable_impl:last(...)
         :result()
 end
 
+---@generic T, K, V, R1, R2
+---@overload fun(self: enumerable<T>): enumerable<T>
+---@overload fun(self: enumerable<K, V>): enumerable<K, V>
+---@overload fun(self: enumerable<T>, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any), comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any), comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: string|nil, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string|nil, comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (any)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (any)): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: string): enumerable<any>
+---@overload fun(self: enumerable<K, V>, selector: string): enumerable<any, any>
+---@overload fun(self: enumerable<T>, selector: fun(item: T): (R1), comparer: fun(a: R1, b: R1): (boolean)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (R1), comparer: fun(value1: R1, value2: R1): (boolean)): enumerable<K, V>
+---@overload fun(self: enumerable<K, V>, selector: fun(key: K, value: V): (R1, R2), comparer: fun(key1: R1, value1: R2, key2: R1, value2: R2): (boolean)): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: string|nil, comparer: fun(a: any, b: any): (boolean)): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string|nil, comparer: fun(value1: any, value2: any): (boolean)): enumerable<K, V>
+---@overload fun(self: enumerable<T>, selector: string|nil, comparer: string): enumerable<T>
+---@overload fun(self: enumerable<K, V>, selector: string|nil, comparer: string): enumerable<K, V>
+function enumerable_impl:sort(...)
+    local argc = select("#", ...)
+    local selector_or_comparer = select(1, ...)
+    local comparer = select(2, ...)
+
+    return map({
+            makeArgDescriptor(selector_or_comparer, argc),
+            makeArgDescriptor(comparer)
+        })
+        :track_cases()
+        :case({
+                { argc = 0,    type = "nil" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>): enumerable<T>
+            function(_)
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local last_a = a[#a]
+                                local last_b = b[#b]
+                                if last_a == nil then
+                                    return true
+                                elseif last_b == nil then
+                                    return false
+                                else
+                                    return tostring(last_a) < tostring(last_b)
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+                { argc = 1,    type = "table", ext_type = "equality_comparer" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, comparer: equality_comparer): enumerable<T>
+            function(_)
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local adjusted_a, adjusted_b = selector_or_comparer --[[@as equality_comparer]]
+                                    :compare(a[#a], b[#b], true)
+                                if adjusted_a == nil then
+                                    return true
+                                elseif adjusted_b == nil then
+                                    return false
+                                else
+                                    return adjusted_a < adjusted_b
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+                { argc = 2,       type = "function" },
+                { type = "table", ext_type = "equality_comparer" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): (any), comparer: equality_comparer): enumerable<T>
+            function(_)
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data_key = get_per_table_uniq_key(self, "sort")
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_or_comparer(table.unpack(a))
+                                local projected_b = selector_or_comparer(table.unpack(b))
+                                local adjusted_a, adjusted_b = comparer --[[@as equality_comparer]]
+                                    :compare(projected_a, projected_b, true)
+                                if adjusted_a == nil then
+                                    return true
+                                elseif adjusted_b == nil then
+                                    return false
+                                else
+                                    return adjusted_a < adjusted_b
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end
+        )
+        :case({
+            { argc = 2,       type = "string" },
+            { type = "table", ext_type = "equality_comparer" }
+        })
+        :case({
+                { argc = 2,       type = "nil" },
+                { type = "table", ext_type = "equality_comparer" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string|nil, comparer: equality_comparer): enumerable<T>
+            function(_)
+                local selector_func
+                if type(selector_or_comparer) == "string" then
+                    local is_selector_predicate = string.find(selector_or_comparer --[[@as string]], "=>") ~= nil
+                    if is_selector_predicate then
+                        selector_func = compileEnumerableStringExpression(selector_or_comparer, "selector")
+                    else
+                        selector_func = makeValuePropertySelector(selector_or_comparer)
+                    end
+                else
+                    selector_func = function(...)
+                        return select(-1, ...)
+                    end
+                end
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_func(table.unpack(a))
+                                local projected_b = selector_func(table.unpack(b))
+                                local adjusted_a, adjusted_b = comparer --[[@as equality_comparer]]
+                                    :compare(projected_a, projected_b, true)
+                                if adjusted_a == nil then
+                                    return true
+                                elseif adjusted_b == nil then
+                                    return false
+                                else
+                                    return adjusted_a < adjusted_b
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+                { argc = 1,    type = "function" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): (any)): enumerable<T>
+            function(_)
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_or_comparer(table.unpack(a))
+                                local projected_b = selector_or_comparer(table.unpack(b))
+                                if projected_a == nil then
+                                    return true
+                                elseif projected_b == nil then
+                                    return false
+                                else
+                                    return tostring(projected_a) < tostring(projected_b)
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+                { argc = 1,    type = "string" },
+                { type = "nil" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string): enumerable<T>
+            function(_)
+                local is_selector_predicate = string.find(selector_or_comparer --[[@as string]], "=>") ~= nil
+                local selector_func
+                if is_selector_predicate then
+                    selector_func = compileEnumerableStringExpression(selector_or_comparer, "selector")
+                else
+                    selector_func = makeValuePropertySelector(selector_or_comparer)
+                end
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_func(table.unpack(a))
+                                local projected_b = selector_func(table.unpack(b))
+                                if projected_a == nil then
+                                    return true
+                                elseif projected_b == nil then
+                                    return false
+                                else
+                                    return tostring(projected_a) < tostring(projected_b)
+                                end
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+                { argc = 2,         type = "function" },
+                { type = "function" }
+            },
+            ---@generic T, R1
+            ---@type fun(self: enumerable<T>, selector: fun(item: T): (R1), comparer: fun(a: R1, b: R1): (boolean)): enumerable<T>
+            function(_)
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_or_comparer(table.unpack(a))
+                                local projected_b = selector_or_comparer(table.unpack(b))
+                                return comparer(projected_a, projected_b)
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+            { argc = 2,         type = "string" },
+            { type = "function" }
+        })
+        :case({
+                { argc = 2,         type = "nil" },
+                { type = "function" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string|nil, comparer: fun(a: any, b: any): (boolean)): enumerable<T>
+            function(_)
+                local selector_func
+                if type(selector_or_comparer) == "string" then
+                    local is_selector_predicate = string.find(selector_or_comparer --[[@as string]], "=>") ~= nil
+                    if is_selector_predicate then
+                        selector_func = compileEnumerableStringExpression(selector_or_comparer, "selector")
+                    else
+                        selector_func = makeValuePropertySelector(selector_or_comparer)
+                    end
+                else
+                    selector_func = function(...)
+                        return select(-1, ...)
+                    end
+                end
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_func(table.unpack(a))
+                                local projected_b = selector_func(table.unpack(b))
+                                return comparer(projected_a, projected_b)
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :case({
+            { argc = 2,       type = "string" },
+            { type = "string" }
+        })
+        :case({
+                { argc = 2,       type = "nil" },
+                { type = "string" }
+            },
+            ---@generic T
+            ---@type fun(self: enumerable<T>, selector: string|nil, comparer: string): enumerable<T>
+            function(_)
+                local selector_func
+                if type(selector_or_comparer) == "string" then
+                    local is_selector_predicate = string.find(selector_or_comparer --[[@as string]], "=>") ~= nil
+                    if is_selector_predicate then
+                        selector_func = compileEnumerableStringExpression(selector_or_comparer, "selector")
+                    else
+                        selector_func = makeValuePropertySelector(selector_or_comparer)
+                    end
+                else
+                    selector_func = function(...)
+                        return select(-1, ...)
+                    end
+                end
+                local comparer_func = compileEnumerableStringExpression(comparer, "comparer")
+                local data_key = get_per_table_uniq_key(self, "sort")
+                return setmetatable({
+                    __src = self,
+                    __next = function(iter, enumerable)
+                        validateIter(iter)
+
+                        iter.__data = iter.__data or {}
+                        if iter.__data[data_key] == nil then
+                            local data = {}
+                            local source_iter = enumerable.__src:iter()
+                            local value = { source_iter() }
+                            while #value ~= 0 do
+                                table.insert(data, value)
+                                value = { source_iter() }
+                            end
+                            table.sort(data, function(a, b)
+                                local projected_a = selector_func(table.unpack(a))
+                                local projected_b = selector_func(table.unpack(b))
+                                return comparer_func(projected_a, projected_b)
+                            end)
+                            data.idx = 1
+                            iter.__data[data_key] = data
+                        end
+
+                        local value = iter.__data[data_key][iter.__data[data_key].idx]
+                        if value == nil or #value == 0 then
+                            return nil
+                        end
+                        iter.__data[data_key].idx = iter.__data[data_key].idx + 1
+                        return table.unpack(value)
+                    end
+                }, makeEnumerableMeta())
+            end)
+        :default(function(signature, existing_signatures)
+            error_invalid_signature("enumerable:sort", signature, existing_signatures or {})
+        end)
+        :result()
+end
+
 ---@generic T, K, V
 ---@overload fun(self: enumerable<T>): iter<T>
 ---@overload fun(self: enumerable<K, V>): iter<K, V>
@@ -2270,6 +2781,22 @@ function list_impl:min(...)
     validateList(self)
 
     return self:enumerate():min(...)
+end
+
+---@generic T, R1
+---@overload fun(self: list<T>): enumerable<T>
+---@overload fun(self: list<T>, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: list<T>, selector: fun(item: T): (any), comparer: equality_comparer): enumerable<T>
+---@overload fun(self: list<T>, selector: string|nil, comparer: equality_comparer): enumerable<T>
+---@overload fun(self: list<T>, selector: fun(item: T): (any)): enumerable<T>
+---@overload fun(self: list<T>, selector: string): enumerable<any>|enumerable<any, any>
+---@overload fun(self: list<T>, selector: fun(item: T): (R1), comparer: fun(a: R1, b: R1): (boolean)): enumerable<T>
+---@overload fun(self: list<T>, selector: string|nil, comparer: fun(a: any, b: any): (boolean)): enumerable<T>
+---@overload fun(self: list<T>, selector: string|nil, comparer: string): enumerable<T>
+function list_impl:sort(...)
+    validateList(self)
+
+    return self:enumerate():sort(...)
 end
 
 ---@generic T, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
@@ -2535,6 +3062,22 @@ function dict_impl:min(...)
     validateDict(self)
 
     return self:enumerate():min(...)
+end
+
+---@generic K, V, R1
+---@overload fun(self: dict<K, V>): enumerable<K, V>
+---@overload fun(self: dict<K, V>, comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: fun(key: K, value: V): (any), comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: string|nil, comparer: equality_comparer): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: fun(key: K, value: V): (any)): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: string): enumerable<any>|enumerable<any, any>
+---@overload fun(self: dict<K, V>, selector: fun(key: K, value: V): (R1), comparer: fun(a: R1, b: R1): (boolean)): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: string|nil, comparer: fun(a: any, b: any): (boolean)): enumerable<K, V>
+---@overload fun(self: dict<K, V>, selector: string|nil, comparer: string): enumerable<K, V>
+function dict_impl:sort(...)
+    validateDict(self)
+
+    return self:enumerate():sort(...)
 end
 
 ---@generic K, V, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10
