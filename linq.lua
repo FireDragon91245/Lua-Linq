@@ -2167,9 +2167,9 @@ function enumerable_impl:sort(...)
     local comparer = select(2, ...)
 
     ---@param selector (fun(...: any): (any))|nil
-    ---@param comparer equality_comparer|(fun(a: any, b: any): (boolean))|nil
+    ---@param cmp equality_comparer|(fun(a: any, b: any): (boolean))|nil
     ---@return fun(a: any, b: any): boolean
-    local make_sort_callback = function(selector, comparer)
+    local make_sort_callback = function(selector, cmp)
         return function(a, b)
             local projected_a
             local projected_b
@@ -2180,10 +2180,10 @@ function enumerable_impl:sort(...)
                 projected_a = a[#a]
                 projected_b = b[#b]
             end
-            if type(comparer) == "table" then
-                projected_a, projected_b = comparer:compare(projected_a, projected_b, true)
-            elseif type(comparer) == "function" then
-                return comparer(projected_a, projected_b)
+            if type(cmp) == "table" then
+                projected_a, projected_b = cmp:compare(projected_a, projected_b, true)
+            elseif type(cmp) == "function" then
+                return cmp(projected_a, projected_b)
             end
 
             if projected_a == nil then
@@ -2290,7 +2290,6 @@ function enumerable_impl:sort(...)
 
                         iter.__data = iter.__data or {}
                         if iter.__data[data_key] == nil then
-                            local data_key = get_per_table_uniq_key(self, "sort")
                             local data = {}
                             local source_iter = enumerable.__src:iter()
                             local value = { source_iter() }
